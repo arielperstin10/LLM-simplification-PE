@@ -87,18 +87,14 @@ jobs:
           echo "PostgreSQL container: $PG_CONTAINER"
           echo "PostgreSQL network: $PG_NETWORK"
 
-          # Get PostgreSQL IP on its network (fallback if service name doesn't work)
-          PG_IP=$(docker inspect $PG_CONTAINER --format "{{range .NetworkSettings.Networks}}{{if eq .NetworkID (docker network inspect $PG_NETWORK --format '{{.Id}}')}}{{.IPAddress}}{{end}}{{end}}" | head -n1)
+          # Get PostgreSQL IP on its network (for reference/debugging)
+          PG_IP=$(docker inspect $PG_CONTAINER --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -n1)
 
-          # Try service name first, fallback to IP
+          # Use service name 'postgres' - GitHub Actions services are accessible by name on same network
           PG_HOST="postgres"
-          if [ -z "$PG_IP" ]; then
-            # If we can't get IP, try to get it from network inspect
-            PG_IP=$(docker network inspect $PG_NETWORK --format '{{range .Containers}}{{.IPv4Address}}{{end}}' | cut -d'/' -f1 | head -n1)
-          fi
 
           echo "PostgreSQL IP: $PG_IP"
-          echo "Using hostname: $PG_HOST (will fallback to IP if needed)"
+          echo "Using hostname: $PG_HOST"
 
           # Start app container on the same network as PostgreSQL
           # Use service name 'postgres' as hostname (GitHub Actions services are accessible by name)
@@ -152,20 +148,28 @@ jobs:
           echo "Testing database connection..."
           RETRY_COUNT=0
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            DB_RESPONSE=$(curl -s http://localhost:8000/api/v1/health/db || echo "")
-            if echo "$DB_RESPONSE" | grep -q '"status": "ok"'; then
+            # Check HTTP status code first (200 = success)
+            HTTP_CODE=$(curl -s -o /tmp/db_response.json -w "%{http_code}" http://localhost:8000/api/v1/health/db)
+            DB_RESPONSE=$(cat /tmp/db_response.json)
+            
+            # Check if HTTP status is 200 and response contains "ok" status
+            if [ "$HTTP_CODE" = "200" ] && (echo "$DB_RESPONSE" | grep -q '"status" *: *"ok"' || echo "$DB_RESPONSE" | grep -q '"database" *: *"connected"'); then
               echo "✅ Database health check passed"
-              echo "$DB_RESPONSE"
+              echo "HTTP Status: $HTTP_CODE"
+              echo "Response: $DB_RESPONSE"
               break
             fi
+            
             RETRY_COUNT=$((RETRY_COUNT + 1))
             if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
               echo "❌ Database health check failed after $MAX_RETRIES attempts"
+              echo "HTTP Status: $HTTP_CODE"
               echo "Response: $DB_RESPONSE"
               docker logs test-container
               exit 1
             fi
-            echo "Database check attempt $RETRY_COUNT/$MAX_RETRIES failed, retrying in 3 seconds..."
+            echo "Database check attempt $RETRY_COUNT/$MAX_RETRIES failed (HTTP $HTTP_CODE), retrying in 3 seconds..."
+            echo "Response was: $DB_RESPONSE"
             sleep 3
           done
 
