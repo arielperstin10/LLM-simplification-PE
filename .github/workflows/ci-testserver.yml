@@ -1,0 +1,178 @@
+name: CI (TestServer Branch)
+
+on:
+  pull_request:
+    branches: [testServer]
+  push:
+    branches: [testServer]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check imports
+        run: |
+          python -m py_compile app/main.py || exit 1
+          python -c "from app.main import app; print('✓ Imports successful')"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: llm_simplification_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Docker/Dockerfile
+          tags: llm-simplification-backend:latest
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Test Docker image with PostgreSQL
+        run: |
+          # Get PostgreSQL container and its network
+          # GitHub Actions services are accessible by their service name when on the same network
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=postgres:15-alpine" | head -n1)
+
+          if [ -z "$PG_CONTAINER" ]; then
+            echo "❌ PostgreSQL container not found"
+            docker ps -a
+            exit 1
+          fi
+
+          # Get the network name that PostgreSQL is connected to
+          PG_NETWORK=$(docker inspect $PG_CONTAINER --format '{{range $net, $conf := .NetworkSettings.Networks}}{{$net}}{{end}}' | head -n1)
+
+          if [ -z "$PG_NETWORK" ]; then
+            echo "❌ Could not determine PostgreSQL network"
+            docker inspect $PG_CONTAINER | grep -A 20 NetworkSettings
+            exit 1
+          fi
+
+          echo "PostgreSQL container: $PG_CONTAINER"
+          echo "PostgreSQL network: $PG_NETWORK"
+
+          # Get PostgreSQL IP on its network (for reference/debugging)
+          PG_IP=$(docker inspect $PG_CONTAINER --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -n1)
+
+          # Use service name 'postgres' - GitHub Actions services are accessible by name on same network
+          PG_HOST="postgres"
+
+          echo "PostgreSQL IP: $PG_IP"
+          echo "Using hostname: $PG_HOST"
+
+          # Start app container on the same network as PostgreSQL
+          # Use service name 'postgres' as hostname (GitHub Actions services are accessible by name)
+          docker run --rm -d \
+            --name test-container \
+            --network $PG_NETWORK \
+            -p 8000:8000 \
+            -e DATABASE_URL=postgresql://postgres:postgres@$PG_HOST:5432/llm_simplification_test \
+            -e APP_ENV=test \
+            llm-simplification-backend:latest
+
+          # If connection fails, we can retry with IP in the health check
+          export PG_FALLBACK_IP=$PG_IP
+
+          # Wait for container to be ready and check logs
+          echo "Waiting for container to start..."
+          sleep 10
+
+          # Check if container is running
+          if ! docker ps | grep -q test-container; then
+            echo "❌ Container failed to start"
+            docker logs test-container || true
+            exit 1
+          fi
+
+          # Show container logs for debugging
+          echo "Container logs:"
+          docker logs test-container
+
+          # Test basic health endpoint (no DB required)
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -f -s http://localhost:8000/api/v1/health > /dev/null; then
+              echo "✅ Basic health check passed"
+              curl -s http://localhost:8000/api/v1/health
+              break
+            fi
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Basic health check failed after $MAX_RETRIES attempts"
+              docker logs test-container
+              exit 1
+            fi
+            echo "Health check attempt $RETRY_COUNT/$MAX_RETRIES failed, retrying in 3 seconds..."
+            sleep 3
+          done
+
+          # Test database health endpoint (requires DB connection)
+          echo ""
+          echo "Testing database connection..."
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Check HTTP status code first (200 = success)
+            HTTP_CODE=$(curl -s -o /tmp/db_response.json -w "%{http_code}" http://localhost:8000/api/v1/health/db)
+            DB_RESPONSE=$(cat /tmp/db_response.json)
+            
+            # Check if HTTP status is 200 and response contains "ok" status
+            if [ "$HTTP_CODE" = "200" ] && (echo "$DB_RESPONSE" | grep -q '"status" *: *"ok"' || echo "$DB_RESPONSE" | grep -q '"database" *: *"connected"'); then
+              echo "✅ Database health check passed"
+              echo "HTTP Status: $HTTP_CODE"
+              echo "Response: $DB_RESPONSE"
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Database health check failed after $MAX_RETRIES attempts"
+              echo "HTTP Status: $HTTP_CODE"
+              echo "Response: $DB_RESPONSE"
+              docker logs test-container
+              exit 1
+            fi
+            echo "Database check attempt $RETRY_COUNT/$MAX_RETRIES failed (HTTP $HTTP_CODE), retrying in 3 seconds..."
+            echo "Response was: $DB_RESPONSE"
+            sleep 3
+          done
+
+          # Cleanup
+          docker stop test-container
+
