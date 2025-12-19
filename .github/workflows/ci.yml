@@ -65,27 +65,53 @@ jobs:
 
       - name: Test Docker image with PostgreSQL
         run: |
-          # Get PostgreSQL container IP
-          # GitHub Actions services run in containers accessible via localhost from runner
-          # For Docker containers, we need the actual container IP or use gateway
-          PG_IP=$(docker inspect $(docker ps -q --filter "ancestor=postgres:15-alpine") --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null | head -n1)
+          # Get PostgreSQL container and its network
+          # GitHub Actions services are accessible by their service name when on the same network
+          PG_CONTAINER=$(docker ps -q --filter "ancestor=postgres:15-alpine" | head -n1)
 
-          # Fallback to localhost if we can't get IP (for host network) or gateway IP
-          if [ -z "$PG_IP" ]; then
-            # Try gateway IP (default Docker bridge gateway)
-            PG_IP="172.17.0.1"
-            echo "Using gateway IP: $PG_IP"
-          else
-            echo "Using PostgreSQL container IP: $PG_IP"
+          if [ -z "$PG_CONTAINER" ]; then
+            echo "❌ PostgreSQL container not found"
+            docker ps -a
+            exit 1
           fi
 
-          # Start app container
+          # Get the network name that PostgreSQL is connected to
+          PG_NETWORK=$(docker inspect $PG_CONTAINER --format '{{range $net, $conf := .NetworkSettings.Networks}}{{$net}}{{end}}' | head -n1)
+
+          if [ -z "$PG_NETWORK" ]; then
+            echo "❌ Could not determine PostgreSQL network"
+            docker inspect $PG_CONTAINER | grep -A 20 NetworkSettings
+            exit 1
+          fi
+
+          echo "PostgreSQL container: $PG_CONTAINER"
+          echo "PostgreSQL network: $PG_NETWORK"
+
+          # Get PostgreSQL IP on its network (fallback if service name doesn't work)
+          PG_IP=$(docker inspect $PG_CONTAINER --format "{{range .NetworkSettings.Networks}}{{if eq .NetworkID (docker network inspect $PG_NETWORK --format '{{.Id}}')}}{{.IPAddress}}{{end}}{{end}}" | head -n1)
+
+          # Try service name first, fallback to IP
+          PG_HOST="postgres"
+          if [ -z "$PG_IP" ]; then
+            # If we can't get IP, try to get it from network inspect
+            PG_IP=$(docker network inspect $PG_NETWORK --format '{{range .Containers}}{{.IPv4Address}}{{end}}' | cut -d'/' -f1 | head -n1)
+          fi
+
+          echo "PostgreSQL IP: $PG_IP"
+          echo "Using hostname: $PG_HOST (will fallback to IP if needed)"
+
+          # Start app container on the same network as PostgreSQL
+          # Use service name 'postgres' as hostname (GitHub Actions services are accessible by name)
           docker run --rm -d \
             --name test-container \
+            --network $PG_NETWORK \
             -p 8000:8000 \
-            -e DATABASE_URL=postgresql://postgres:postgres@$PG_IP:5432/llm_simplification_test \
+            -e DATABASE_URL=postgresql://postgres:postgres@$PG_HOST:5432/llm_simplification_test \
             -e APP_ENV=test \
             llm-simplification-backend:latest
+
+          # If connection fails, we can retry with IP in the health check
+          export PG_FALLBACK_IP=$PG_IP
 
           # Wait for container to be ready and check logs
           echo "Waiting for container to start..."
