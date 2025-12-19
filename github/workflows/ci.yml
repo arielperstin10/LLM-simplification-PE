@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, testServer]
+  push:
+    branches: [main, testServer]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check imports
+        run: |
+          python -m py_compile app/main.py || exit 1
+          python -c "from app.main import app; print('✓ Imports successful')"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: llm_simplification_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Docker/Dockerfile
+          tags: llm-simplification-backend:latest
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Test Docker image with PostgreSQL
+        run: |
+          # Get PostgreSQL container IP
+          # GitHub Actions services run in containers accessible via localhost from runner
+          # For Docker containers, we need the actual container IP or use gateway
+          PG_IP=$(docker inspect $(docker ps -q --filter "ancestor=postgres:15-alpine") --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null | head -n1)
+
+          # Fallback to localhost if we can't get IP (for host network) or gateway IP
+          if [ -z "$PG_IP" ]; then
+            # Try gateway IP (default Docker bridge gateway)
+            PG_IP="172.17.0.1"
+            echo "Using gateway IP: $PG_IP"
+          else
+            echo "Using PostgreSQL container IP: $PG_IP"
+          fi
+
+          # Start app container
+          docker run --rm -d \
+            --name test-container \
+            -p 8000:8000 \
+            -e DATABASE_URL=postgresql://postgres:postgres@$PG_IP:5432/llm_simplification_test \
+            -e APP_ENV=test \
+            llm-simplification-backend:latest
+
+          # Wait for container to be ready and check logs
+          echo "Waiting for container to start..."
+          sleep 10
+
+          # Check if container is running
+          if ! docker ps | grep -q test-container; then
+            echo "❌ Container failed to start"
+            docker logs test-container || true
+            exit 1
+          fi
+
+          # Show container logs for debugging
+          echo "Container logs:"
+          docker logs test-container
+
+          # Test basic health endpoint (no DB required)
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -f -s http://localhost:8000/api/v1/health > /dev/null; then
+              echo "✅ Basic health check passed"
+              curl -s http://localhost:8000/api/v1/health
+              break
+            fi
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Basic health check failed after $MAX_RETRIES attempts"
+              docker logs test-container
+              exit 1
+            fi
+            echo "Health check attempt $RETRY_COUNT/$MAX_RETRIES failed, retrying in 3 seconds..."
+            sleep 3
+          done
+
+          # Test database health endpoint (requires DB connection)
+          echo ""
+          echo "Testing database connection..."
+          RETRY_COUNT=0
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            DB_RESPONSE=$(curl -s http://localhost:8000/api/v1/health/db || echo "")
+            if echo "$DB_RESPONSE" | grep -q '"status": "ok"'; then
+              echo "✅ Database health check passed"
+              echo "$DB_RESPONSE"
+              break
+            fi
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+              echo "❌ Database health check failed after $MAX_RETRIES attempts"
+              echo "Response: $DB_RESPONSE"
+              docker logs test-container
+              exit 1
+            fi
+            echo "Database check attempt $RETRY_COUNT/$MAX_RETRIES failed, retrying in 3 seconds..."
+            sleep 3
+          done
+
+          # Cleanup
+          docker stop test-container
