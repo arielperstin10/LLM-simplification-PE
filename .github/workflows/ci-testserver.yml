@@ -1,10 +1,10 @@
-name: CI
+name: CI (TestServer Branch)
 
 on:
   pull_request:
-    branches: [main, testServer]
+    branches: [testServer]
   push:
-    branches: [main, testServer]
+    branches: [testServer]
 
 jobs:
   lint:
@@ -175,3 +175,4 @@ jobs:
 
           # Cleanup
           docker stop test-container
+
