@@ -48,7 +48,7 @@ try:
     InstructionConstraintPrompt = constraint_prompt.template_text
 
     # Get all items, then randomly select 40 with seed 42
-    all_items = db.query(DatasetItem.item_id, DatasetItem.text_ele).filter(DatasetItem.text_ele.isnot(None)).all()
+    all_items = db.query(DatasetItem.item_id, DatasetItem.text_adv).filter(DatasetItem.text_adv.isnot(None)).all()
     DatasetItems = random.sample(all_items, min(40, len(all_items)))
 finally:
     db.close()
@@ -79,31 +79,33 @@ async def run_comparison():
     try:
         print(f"Starting comparison with {len(DatasetItems)} items...")
         
-        for idx, (item_id, text_ele) in enumerate(DatasetItems, 1):
+        for idx, (item_id, text_adv) in enumerate(DatasetItems, 1):
             print(f"\nProcessing item {idx}/{len(DatasetItems)} (ID: {item_id})...")
             
             with trace(f"LLM Comparison - Item {item_id}"):
                 # asyncio.gather guarantees results are returned in the same order as coroutines
                 result_zeroshot, result_structured, result_constraint = await asyncio.gather(
-                    Runner.run(ZeroAgent, InstructionZeroShotPrompt.replace("{INPUT_TEXT}", text_ele)),
-                    Runner.run(StructuredAgent, InstructionStructuredPrompt.replace("{INPUT_TEXT}", text_ele)),
-                    Runner.run(ConstraintAgent, InstructionConstraintPrompt.replace("{INPUT_TEXT}", text_ele))
+                    Runner.run(ZeroAgent, InstructionZeroShotPrompt.replace("{INPUT_TEXT}", text_adv)),
+                    Runner.run(StructuredAgent, InstructionStructuredPrompt.replace("{INPUT_TEXT}", text_adv)),
+                    Runner.run(ConstraintAgent, InstructionConstraintPrompt.replace("{INPUT_TEXT}", text_adv))
                 )
                 
                 # Extract text from Runner results
                 output_zeroshot_text = result_zeroshot.final_output if hasattr(result_zeroshot, 'final_output') else str(result_zeroshot)
                 output_structured_text = result_structured.final_output if hasattr(result_structured, 'final_output') else str(result_structured)
                 output_constraint_text = result_constraint.final_output if hasattr(result_constraint, 'final_output') else str(result_constraint)
-                # Store results in database - all three outputs in one record
+                
+                # Store results in database - one row with all three outputs
                 prompt_result = PromptResult(
                     item_id=item_id,
-                    prompt_version_id=zero_shot_prompt.prompt_version_id,  
-                    input_text=text_ele,
+                    prompt_version_id=zero_shot_prompt.prompt_version_id,
+                    input_text=text_adv,
                     output_zeroshot=output_zeroshot_text,
                     output_structured=output_structured_text,
                     output_constraint=output_constraint_text,
                     model_name="gpt-4o-mini"
                 )
+                
                 db_session.add(prompt_result)
                 db_session.commit()     
     except Exception as e:
