@@ -30,4 +30,5 @@ class DatasetItem(Base):
 
     # Relationships
     dataset = relationship("Dataset", back_populates="items")
+    results = relationship("PromptResult", back_populates="dataset_item", cascade="all, delete-orphan")
 
