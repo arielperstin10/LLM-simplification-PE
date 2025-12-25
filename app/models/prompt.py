@@ -41,9 +41,7 @@ class PromptResult(Base):
     item_id = Column(UUID(as_uuid=True), ForeignKey("dataset_items.item_id", ondelete="CASCADE"), nullable=False)
     prompt_version_id = Column(UUID(as_uuid=True), ForeignKey("prompt_versions.prompt_version_id", ondelete="CASCADE"), nullable=False)
     input_text = Column(Text, nullable=False)
-    output_zeroshot = Column(Text, nullable=True)
-    output_structured = Column(Text, nullable=True)
-    output_constraint = Column(Text, nullable=True)
+    output_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     model_name = Column(Text,nullable=True)
 
