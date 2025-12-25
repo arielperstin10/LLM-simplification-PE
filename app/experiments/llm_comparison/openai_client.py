@@ -95,19 +95,23 @@ async def run_comparison():
                 output_structured_text = result_structured.final_output if hasattr(result_structured, 'final_output') else str(result_structured)
                 output_constraint_text = result_constraint.final_output if hasattr(result_constraint, 'final_output') else str(result_constraint)
                 
-                # Store results in database - one row with all three outputs
-                prompt_result = PromptResult(
-                    item_id=item_id,
-                    prompt_version_id=zero_shot_prompt.prompt_version_id,
-                    input_text=text_adv,
-                    output_zeroshot=output_zeroshot_text,
-                    output_structured=output_structured_text,
-                    output_constraint=output_constraint_text,
-                    model_name="gpt-4o-mini"
-                )
+                results = {
+                    "zero-shot": (output_zeroshot_text, zero_shot_prompt.prompt_version_id),
+                    "structured": (output_structured_text, structured_prompt.prompt_version_id),
+                    "constraint": (output_constraint_text, constraint_prompt.prompt_version_id)
+                }
                 
-                db_session.add(prompt_result)
-                db_session.commit()     
+                for key, (output_text, prompt_version_id) in results.items():
+                  prompt_result = PromptResult(
+                      item_id=item_id,
+                      prompt_version_id=prompt_version_id,
+                      input_text=text_adv,
+                      output_text=output_text,
+                      model_name="gpt-4o-mini"
+                  )
+                  
+                  db_session.add(prompt_result)
+                  db_session.commit()     
     except Exception as e:
         db_session.rollback()
         print(f"Error occurred: {e}")
