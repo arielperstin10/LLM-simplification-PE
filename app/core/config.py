@@ -22,5 +22,6 @@ class Settings:
     )
     
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", None)
 
 settings = Settings()
