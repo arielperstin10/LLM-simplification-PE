@@ -32,6 +32,7 @@ class PromptVersion(Base):
     # Relationships
     prompt = relationship("Prompt", back_populates="versions")
     results = relationship("PromptResult", back_populates="prompt_version", cascade="all, delete-orphan")
+    evaluations = relationship("Evaluation", back_populates="prompt_version", cascade="all, delete-orphan")
 
 
 class PromptResult(Base):
