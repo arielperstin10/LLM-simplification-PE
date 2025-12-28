@@ -1,23 +1,25 @@
 """
-Calculate SARI scores for PromptResults and store in Evaluation table.
+Calculate BERTScore for PromptResults and store in Evaluation table.
 """
 
-from easse.sari import corpus_sari
+from transformers.utils import logging as hf_logging
+from bert_score import score
 from app.db.session import SessionLocal
 from app.models.prompt import PromptResult
 from app.models.dataset import DatasetItem
 from app.models.evaluation import Evaluation
 
+# Suppress warnings about unused pooler layer weights
+hf_logging.set_verbosity_error()
 
-def calculate_sari_scores():
+
+def calculate_bertscore():
     db = SessionLocal()
     
     try:
-        # Get all PromptResults with their corresponding DatasetItems
         results = db.query(
             PromptResult.result_id,
             PromptResult.prompt_version_id,
-            PromptResult.input_text,
             PromptResult.output_text,
             DatasetItem.text_ele
         ).join(
@@ -26,27 +28,30 @@ def calculate_sari_scores():
             PromptResult.output_text.isnot(None),
             DatasetItem.text_ele.isnot(None)
         ).all()
-        # Calculate SARI for each individual PromptResult
+        
+        # Calculate BERTScore for each individual PromptResult
         processed = 0
         
-        for result_id, prompt_version_id, input_text, output_text, text_ele in results:
+        for result_id, prompt_version_id, output_text, text_ele in results:
             processed += 1
             
             if processed % 10 == 0:
                 print(f"Processing {processed}/{len(results)}...")
             
-            sari_score = None
+            bertscore_f1 = None
             
-            # Calculate SARI for this single result using corpus_sari with single sentences
+            # Calculate BERTScore
             try:
-                sari_score = corpus_sari(
-                    orig_sents=[input_text],
-                    sys_sents=[output_text],
-                    refs_sents=[[text_ele]]  
+                P, R, F1 = score(
+                    cands=[output_text],
+                    refs=[text_ele],
+                    lang='en',
+                    verbose=False
                 )
+                bertscore_f1 = F1.item()
             except Exception as e:
-                    import traceback
-                    traceback.print_exc()
+                import traceback
+                traceback.print_exc()
             
             # Check if Evaluation already exists for this result_id
             existing_eval = db.query(Evaluation).filter(
@@ -54,20 +59,17 @@ def calculate_sari_scores():
             ).first()
             
             if existing_eval:
-                # Update existing evaluation
-                existing_eval.sari = sari_score
+                existing_eval.bertscore_f1 = bertscore_f1
             else:
-                # Create new evaluation
                 evaluation = Evaluation(
                     prompt_version_id=prompt_version_id,
                     result_id=result_id,
-                    sari=sari_score
+                    bertscore_f1=bertscore_f1
                 )
                 db.add(evaluation)
         
-        # Commit all changes
         db.commit()
-        print(f"\n✓ Successfully calculated and stored SARI scores:")
+        print(f"\n✓ Successfully calculated and stored BERTScore:")
         print(f"  - Processed: {processed} results")
         
     except Exception as e:
@@ -81,5 +83,5 @@ def calculate_sari_scores():
 
 
 if __name__ == "__main__":
-    calculate_sari_scores()
+    calculate_bertscore()
 
