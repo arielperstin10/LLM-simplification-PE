@@ -14,3 +14,4 @@ azure-ai-agents
 litellm
 google-generativeai
 agents
+easse @ git+https://github.com/feralvam/easse.git

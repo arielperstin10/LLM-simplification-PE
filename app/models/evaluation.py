@@ -11,8 +11,8 @@ class Evaluation(Base):
 
     evaluation_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     prompt_version_id = Column(UUID(as_uuid=True), ForeignKey("prompt_versions.prompt_version_id", ondelete="CASCADE"), nullable=False)
+    result_id = Column(UUID(as_uuid=True), ForeignKey("prompt_results.result_id", ondelete="CASCADE"), nullable=False)
     sari = Column(Float, nullable=True)
-    sari_with_refs = Column(Float, nullable=True)
     bertscore_f1 = Column(Float, nullable=True)
     fkgl = Column(Float, nullable=True)
     fkgl_delta = Column(Float, nullable=True)
@@ -23,4 +23,5 @@ class Evaluation(Base):
 
     # Relationships
     prompt_version = relationship("PromptVersion", back_populates="evaluations")
+    prompt_result = relationship("PromptResult", back_populates="evaluation")
 

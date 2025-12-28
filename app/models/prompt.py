@@ -49,4 +49,5 @@ class PromptResult(Base):
     # Relationships
     dataset_item = relationship("DatasetItem", back_populates="results")
     prompt_version = relationship("PromptVersion", back_populates="results")
+    evaluation = relationship("Evaluation", back_populates="prompt_result", uselist=False)
 
