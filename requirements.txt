@@ -17,3 +17,4 @@ agents
 easse @ git+https://github.com/feralvam/easse.git
 bert-score
 textstat
+nltk
