@@ -16,6 +16,8 @@ google-generativeai
 agents
 easse @ git+https://github.com/feralvam/easse.git
 bert-score
+transformers
+torch
 textstat
 nltk
 pandas

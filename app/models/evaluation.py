@@ -15,6 +15,7 @@ class Evaluation(Base):
     sari = Column(Float, nullable=True)
     bertscore_f1 = Column(Float, nullable=True)
     bleu = Column(Float, nullable=True)
+    perplexity = Column(Float, nullable=True)
     fkgl_input = Column(Float, nullable=True)
     fkgl_output = Column(Float, nullable=True)
     delta_fkgl = Column(Float, nullable=True)
