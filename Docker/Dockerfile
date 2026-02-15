@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --prefer-binary -r requirements.txt
+# Install runtime dependencies only (no experiments/analysis packages)
+COPY requirements-runtime.txt .
+RUN pip install --no-cache-dir --prefer-binary -r requirements-runtime.txt
 
 COPY . .
 EXPOSE 8000
