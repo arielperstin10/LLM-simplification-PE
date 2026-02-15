@@ -15,6 +15,12 @@ We use a fixed pretrained model (distilgpt2) as evaluator:
 - Processes texts individually with proper error handling
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import app modules
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from app.db.session import SessionLocal
