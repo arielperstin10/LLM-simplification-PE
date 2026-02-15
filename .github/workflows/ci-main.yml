@@ -19,7 +19,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Use minimal requirements for lint job to avoid disk space issues
+          pip install -r requirements-lint.txt
+          # Clean pip cache to free up space
+          pip cache purge || true
 
       - name: Check imports
         run: |
