@@ -46,6 +46,11 @@ def aggregate_overall_by_model():
             func.min(Evaluation.sari).label('min_sari'),
             func.max(Evaluation.sari).label('max_sari'),
             
+            func.avg(Evaluation.perplexity).label('avg_perplexity'),
+            func.stddev(Evaluation.perplexity).label('std_perplexity'),
+            func.min(Evaluation.perplexity).label('min_perplexity'),
+            func.max(Evaluation.perplexity).label('max_perplexity'),
+            
             # Readability deltas (FKGL: negative is better, FRE: positive is better)
             func.avg(Evaluation.delta_fkgl).label('avg_delta_fkgl'),
             func.stddev(Evaluation.delta_fkgl).label('std_delta_fkgl'),
@@ -91,6 +96,11 @@ def aggregate_overall_by_model():
             'sari_std': float(r.std_sari) if r.std_sari else None,
             'sari_min': float(r.min_sari) if r.min_sari else None,
             'sari_max': float(r.max_sari) if r.max_sari else None,
+            # Perplexity
+            'perplexity_mean': float(r.avg_perplexity) if r.avg_perplexity else None,
+            'perplexity_std': float(r.std_perplexity) if r.std_perplexity else None,
+            'perplexity_min': float(r.min_perplexity) if r.min_perplexity else None,
+            'perplexity_max': float(r.max_perplexity) if r.max_perplexity else None,
             # FKGL Delta
             'fkgl_delta_mean': float(r.avg_delta_fkgl) if r.avg_delta_fkgl else None,
             'fkgl_delta_std': float(r.std_delta_fkgl) if r.std_delta_fkgl else None,
@@ -130,6 +140,8 @@ def aggregate_by_model_and_strategy():
             func.stddev(Evaluation.bleu).label('std_bleu'),
             func.avg(Evaluation.sari).label('avg_sari'),
             func.stddev(Evaluation.sari).label('std_sari'),
+            func.avg(Evaluation.perplexity).label('avg_perplexity'),
+            func.stddev(Evaluation.perplexity).label('std_perplexity'),
             # Readability deltas
             func.avg(Evaluation.delta_fkgl).label('avg_delta_fkgl'),
             func.stddev(Evaluation.delta_fkgl).label('std_delta_fkgl'),
@@ -168,6 +180,9 @@ def aggregate_by_model_and_strategy():
             # SARI
             'sari_mean': float(r.avg_sari) if r.avg_sari else None,
             'sari_std': float(r.std_sari) if r.std_sari else None,
+            # Perplexity
+            'perplexity_mean': float(r.avg_perplexity) if r.avg_perplexity else None,
+            'perplexity_std': float(r.std_perplexity) if r.std_perplexity else None,
             # FKGL Delta
             'fkgl_delta_mean': float(r.avg_delta_fkgl) if r.avg_delta_fkgl else None,
             'fkgl_delta_std': float(r.std_delta_fkgl) if r.std_delta_fkgl else None,
@@ -202,6 +217,7 @@ def get_detailed_results():
             Evaluation.bertscore_f1,
             Evaluation.bleu,
             Evaluation.sari,
+            Evaluation.perplexity,
             # Readability deltas
             Evaluation.delta_fkgl,
             Evaluation.fre_delta,
@@ -231,6 +247,7 @@ def get_detailed_results():
             'bertscore': float(r.bertscore_f1) if r.bertscore_f1 else None,
             'bleu': float(r.bleu) if r.bleu else None,
             'sari': float(r.sari) if r.sari else None,
+            'perplexity': float(r.perplexity) if r.perplexity else None,
             # Readability deltas
             'fkgl_delta': float(r.delta_fkgl) if r.delta_fkgl else None,
             'fre_delta': float(r.fre_delta) if r.fre_delta else None,
@@ -263,6 +280,8 @@ def print_summary_table(df_overall):
               f"[{row['bleu_min']:.4f}, {row['bleu_max']:.4f}]")
         print(f"    SARI:      {row['sari_mean']:.4f} ± {row['sari_std']:.4f} "
               f"[{row['sari_min']:.4f}, {row['sari_max']:.4f}]")
+        print(f"    Perplexity: {row['perplexity_mean']:.4f} ± {row['perplexity_std']:.4f} "
+              f"[{row['perplexity_min']:.4f}, {row['perplexity_max']:.4f}] (lower is better)")
         print(f"\n  Readability Improvement:")
         print(f"    FKGL Δ:    {row['fkgl_delta_mean']:.2f} ± {row['fkgl_delta_std']:.2f} "
               f"(negative = simpler, better)")
