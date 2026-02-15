@@ -2,6 +2,12 @@
 Calculate SARI scores for PromptResults and store in Evaluation table.
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import app modules
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
+
 from easse.sari import corpus_sari
 from app.db.session import SessionLocal
 from app.models.prompt import PromptResult
@@ -82,4 +88,3 @@ def calculate_sari_scores():
 
 if __name__ == "__main__":
     calculate_sari_scores()
-
