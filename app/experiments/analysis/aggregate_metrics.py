@@ -264,6 +264,119 @@ def get_detailed_results():
         db.close()
 
 
+def aggregate_by_prompt_version():
+    """
+    Aggregate metrics by prompt_version_id and model_name.
+    Returns a dictionary where keys are prompt_version_id (as string) and values are DataFrames
+    with models as rows and metrics as columns.
+    Each DataFrame represents one table for a specific prompt_version_id.
+    """
+    db = SessionLocal()
+    
+    try:
+        results = db.query(
+            Evaluation.prompt_version_id,
+            PromptResult.model_name,
+            Prompt.strategy_type,
+            PromptVersion.version,
+            # Quality metrics
+            func.avg(Evaluation.bertscore_f1).label('bertscore_mean'),
+            func.stddev(Evaluation.bertscore_f1).label('bertscore_std'),
+            func.avg(Evaluation.bleu).label('bleu_mean'),
+            func.stddev(Evaluation.bleu).label('bleu_std'),
+            func.avg(Evaluation.sari).label('sari_mean'),
+            func.stddev(Evaluation.sari).label('sari_std'),
+            func.avg(Evaluation.perplexity).label('perplexity_mean'),
+            func.stddev(Evaluation.perplexity).label('perplexity_std'),
+            # Readability deltas
+            func.avg(Evaluation.delta_fkgl).label('delta_fkgl_mean'),
+            func.stddev(Evaluation.delta_fkgl).label('delta_fkgl_std'),
+            func.avg(Evaluation.fre_delta).label('fre_delta_mean'),
+            func.stddev(Evaluation.fre_delta).label('fre_delta_std'),
+            # Output readability
+            func.avg(Evaluation.fkgl_output).label('fkgl_output_mean'),
+            func.stddev(Evaluation.fkgl_output).label('fkgl_output_std'),
+            func.avg(Evaluation.fre_output).label('fre_output_mean'),
+            func.stddev(Evaluation.fre_output).label('fre_output_std'),
+            # Additional metrics
+            func.avg(Evaluation.entity_additions_rate).label('entity_additions_rate_mean'),
+            func.avg(Evaluation.number_mismatch_rate).label('number_mismatch_rate_mean'),
+            # Count
+            func.count(Evaluation.evaluation_id).label('count')
+        ).join(
+            PromptResult, Evaluation.result_id == PromptResult.result_id
+        ).join(
+            PromptVersion, Evaluation.prompt_version_id == PromptVersion.prompt_version_id
+        ).join(
+            Prompt, PromptVersion.prompt_id == Prompt.prompt_id
+        ).filter(
+            PromptResult.model_name.isnot(None),
+            Evaluation.bertscore_f1.isnot(None)
+        ).group_by(
+            Evaluation.prompt_version_id,
+            PromptResult.model_name,
+            Prompt.strategy_type,
+            PromptVersion.version
+        ).all()
+        
+        # Group by prompt_version_id
+        tables_by_prompt_version = {}
+        
+        for r in results:
+            prompt_version_id_str = str(r.prompt_version_id)
+            
+            if prompt_version_id_str not in tables_by_prompt_version:
+                tables_by_prompt_version[prompt_version_id_str] = {
+                    'strategy_type': r.strategy_type,
+                    'version': r.version,
+                    'data': []
+                }
+            
+            tables_by_prompt_version[prompt_version_id_str]['data'].append({
+                'model': r.model_name,
+                'count': r.count,
+                # Quality metrics
+                'BERTScore': float(r.bertscore_mean) if r.bertscore_mean else None,
+                'BERTScore_std': float(r.bertscore_std) if r.bertscore_std else None,
+                'BLEU': float(r.bleu_mean) if r.bleu_mean else None,
+                'BLEU_std': float(r.bleu_std) if r.bleu_std else None,
+                'SARI': float(r.sari_mean) if r.sari_mean else None,
+                'SARI_std': float(r.sari_std) if r.sari_std else None,
+                'Perplexity': float(r.perplexity_mean) if r.perplexity_mean else None,
+                'Perplexity_std': float(r.perplexity_std) if r.perplexity_std else None,
+                # Readability deltas
+                'FKGL_Delta': float(r.delta_fkgl_mean) if r.delta_fkgl_mean else None,
+                'FKGL_Delta_std': float(r.delta_fkgl_std) if r.delta_fkgl_std else None,
+                'FRE_Delta': float(r.fre_delta_mean) if r.fre_delta_mean else None,
+                'FRE_Delta_std': float(r.fre_delta_std) if r.fre_delta_std else None,
+                # Output readability
+                'FKGL_Output': float(r.fkgl_output_mean) if r.fkgl_output_mean else None,
+                'FKGL_Output_std': float(r.fkgl_output_std) if r.fkgl_output_std else None,
+                'FRE_Output': float(r.fre_output_mean) if r.fre_output_mean else None,
+                'FRE_Output_std': float(r.fre_output_std) if r.fre_output_std else None,
+                # Additional metrics
+                'Entity_Additions_Rate': float(r.entity_additions_rate_mean) if r.entity_additions_rate_mean else None,
+                'Number_Mismatch_Rate': float(r.number_mismatch_rate_mean) if r.number_mismatch_rate_mean else None,
+            })
+        
+        # Convert each group to a DataFrame
+        result_dict = {}
+        for prompt_version_id, info in tables_by_prompt_version.items():
+            df = pd.DataFrame(info['data'])
+            # Set model as index for cleaner table display
+            df.set_index('model', inplace=True)
+            result_dict[prompt_version_id] = {
+                'dataframe': df,
+                'strategy_type': info['strategy_type'],
+                'version': info['version']
+            }
+        
+        return result_dict
+        
+    finally:
+        db.close()
+
+
 def print_summary_table(df_overall):
     """Print a formatted summary table of overall metrics."""
     print("\n" + "="*100)
@@ -304,6 +417,101 @@ def export_to_csv(df, filename, output_dir=None):
     df.to_csv(filepath, index=False)
     print(f"✓ Exported to {filepath}")
     return filepath
+
+
+def print_tables_by_prompt_version(tables_dict):
+    """
+    Print tables grouped by prompt_version_id.
+    
+    Args:
+        tables_dict: Dictionary returned by aggregate_by_prompt_version()
+    """
+    print("\n" + "="*120)
+    print("EVALUATION RESULTS BY PROMPT VERSION")
+    print("="*120)
+    
+    for prompt_version_id, info in tables_dict.items():
+        df = info['dataframe']
+        strategy = info['strategy_type']
+        version = info['version']
+        
+        print(f"\n{'='*120}")
+        print(f"Prompt Version ID: {prompt_version_id}")
+        print(f"Strategy Type: {strategy}")
+        print(f"Version: {version}")
+        print(f"{'='*120}\n")
+        
+        # Display the table
+        print(df.to_string())
+        print(f"\nTotal models: {len(df)}")
+        print(f"{'='*120}\n")
+
+
+def export_tables_by_prompt_version(tables_dict, output_dir=None):
+    """
+    Export tables grouped by prompt_version_id to CSV files.
+    
+    Args:
+        tables_dict: Dictionary returned by aggregate_by_prompt_version()
+        output_dir: Directory to save CSV files (default: outputs/csv/prompt_versions/)
+    
+    Returns:
+        List of exported file paths
+    """
+    if output_dir is None:
+        output_dir = Path(__file__).parent / "outputs" / "csv" / "prompt_versions"
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    exported_files = []
+    
+    for prompt_version_id, info in tables_dict.items():
+        df = info['dataframe']
+        strategy = info['strategy_type']
+        version = info['version']
+        
+        # Create filename with strategy and version info
+        safe_strategy = strategy.replace(" ", "_").lower()
+        safe_version = version.replace(" ", "_").lower() if version else "unknown"
+        filename = f"prompt_version_{prompt_version_id[:8]}_{safe_strategy}_v{safe_version}.csv"
+        
+        filepath = output_dir / filename
+        df.to_csv(filepath, index=True)  # index=True to include model names
+        exported_files.append(filepath)
+        print(f"✓ Exported table for prompt_version_id {prompt_version_id[:8]}... to {filepath}")
+    
+    return exported_files
+
+
+def generate_results_by_prompt_version(print_tables=True, export_csv=True):
+    """
+    Generate and optionally display/export results tables grouped by prompt_version_id.
+    
+    Args:
+        print_tables: If True, print tables to console
+        export_csv: If True, export tables to CSV files
+    
+    Returns:
+        Dictionary of tables by prompt_version_id
+    """
+    print("\nGenerating results tables by prompt_version_id...")
+    tables_dict = aggregate_by_prompt_version()
+    
+    if not tables_dict:
+        print("⚠ No data found for prompt version aggregation")
+        return {}
+    
+    print(f"✓ Found {len(tables_dict)} prompt version(s)")
+    
+    if print_tables:
+        print_tables_by_prompt_version(tables_dict)
+    
+    if export_csv:
+        exported_files = export_tables_by_prompt_version(tables_dict)
+        print(f"\n✓ Exported {len(exported_files)} table(s) to CSV")
+    
+    return tables_dict
 
 
 def main():
