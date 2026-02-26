@@ -30,6 +30,7 @@ def aggregate_overall_by_model():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             # Quality metrics (higher is better)
             func.avg(Evaluation.bertscore_f1).label('avg_bertscore'),
             func.stddev(Evaluation.bertscore_f1).label('std_bertscore'),
@@ -65,16 +66,23 @@ def aggregate_overall_by_model():
             func.count(Evaluation.evaluation_id).label('count')
         ).join(
             PromptResult, Evaluation.result_id == PromptResult.result_id
+        ).join(
+            PromptVersion, PromptResult.prompt_version_id == PromptVersion.prompt_version_id
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
         ).group_by(
-            PromptResult.model_name
+            PromptResult.model_name,
+            PromptVersion.version
+        ).order_by(
+            PromptResult.model_name,
+            PromptVersion.version
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
             'count': r.count,
             # BERTScore
             'bertscore_mean': float(r.avg_bertscore) if r.avg_bertscore else None,
@@ -122,6 +130,7 @@ def aggregate_by_model_and_strategy():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type,
             # Quality metrics
             func.avg(Evaluation.bertscore_f1).label('avg_bertscore'),
@@ -151,12 +160,18 @@ def aggregate_by_model_and_strategy():
             Evaluation.bertscore_f1.isnot(None)
         ).group_by(
             PromptResult.model_name,
+            PromptVersion.version,
+            Prompt.strategy_type
+        ).order_by(
+            PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
             'strategy': r.strategy_type,
             'count': r.count,
             # BERTScore
@@ -195,6 +210,7 @@ def get_detailed_results():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type,
             PromptResult.item_id,
             Evaluation.result_id,
@@ -219,11 +235,16 @@ def get_detailed_results():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
+        ).order_by(
+            PromptResult.model_name,
+            PromptVersion.version,
+            Prompt.strategy_type
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
             'strategy': r.strategy_type,
             'item_id': str(r.item_id),
             'result_id': str(r.result_id),
@@ -254,7 +275,7 @@ def print_summary_table(df_overall):
     print("="*100)
     
     for _, row in df_overall.iterrows():
-        print(f"\n{row['model'].upper()}:")
+        print(f"\n{row['model'].upper()} ({row['version']}):")
         print(f"  Samples: {row['count']}")
         print(f"\n  Quality Metrics (higher is better):")
         print(f"    BERTScore: {row['bertscore_mean']:.4f} ± {row['bertscore_std']:.4f} "
@@ -271,6 +292,34 @@ def print_summary_table(df_overall):
         print(f"\n  Output Readability:")
         print(f"    FKGL:      {row['fkgl_output_mean']:.2f} (lower = simpler)")
         print(f"    FRE:       {row['fre_output_mean']:.2f} (higher = easier)")
+
+
+def print_strategy_table(df_by_strategy):
+    """Print a formatted breakdown of metrics by model, version, and strategy."""
+    print("\n" + "="*100)
+    print("BREAKDOWN BY MODEL × VERSION × STRATEGY (40 samples each)")
+    print("="*100)
+
+    current_group = None
+    for _, row in df_by_strategy.iterrows():
+        group = f"{row['model'].upper()} ({row['version']})"
+        if group != current_group:
+            print(f"\n{'─'*100}")
+            print(f"  {group}")
+            print(f"{'─'*100}")
+            print(f"  {'Strategy':<14} {'Count':>6}  {'BERTScore':>10}  {'BLEU':>8}  {'SARI':>8}  {'FKGL Δ':>8}  {'FRE Δ':>8}")
+            current_group = group
+
+        fkgl = f"{row['fkgl_delta_mean']:.2f}" if row['fkgl_delta_mean'] == row['fkgl_delta_mean'] else "  nan"
+        fre  = f"{row['fre_delta_mean']:.2f}"  if row['fre_delta_mean']  == row['fre_delta_mean']  else "  nan"
+        print(
+            f"  {row['strategy']:<14} {row['count']:>6}  "
+            f"{row['bertscore_mean']:>10.4f}  "
+            f"{row['bleu_mean']:>8.4f}  "
+            f"{row['sari_mean']:>8.4f}  "
+            f"{fkgl:>8}  "
+            f"{fre:>8}"
+        )
 
 
 def export_to_csv(df, filename, output_dir=None):
@@ -300,11 +349,11 @@ def main():
     else:
         print("⚠ No data found for overall aggregation")
     
-    # 2. Aggregation by model + strategy
-    print("\n2. Aggregating metrics by model and strategy...")
+    # 2. Aggregation by model + version + strategy
+    print("\n2. Aggregating metrics by model, version, and strategy...")
     df_by_strategy = aggregate_by_model_and_strategy()
     if not df_by_strategy.empty:
-        print(f"\n✓ Found {len(df_by_strategy)} model-strategy combinations")
+        print_strategy_table(df_by_strategy)
         export_to_csv(df_by_strategy, "model_comparison_by_strategy.csv")
     else:
         print("⚠ No data found for strategy-based aggregation")

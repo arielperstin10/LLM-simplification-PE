@@ -24,6 +24,7 @@ def get_detailed_results():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type,
             Evaluation.bertscore_f1,
             Evaluation.bleu,
@@ -35,7 +36,7 @@ def get_detailed_results():
         ).join(
             PromptResult, Evaluation.result_id == PromptResult.result_id
         ).join(
-            PromptVersion, Evaluation.prompt_version_id == PromptVersion.prompt_version_id
+            PromptVersion, PromptResult.prompt_version_id == PromptVersion.prompt_version_id
         ).join(
             Prompt, PromptVersion.prompt_id == Prompt.prompt_id
         ).filter(
@@ -45,6 +46,8 @@ def get_detailed_results():
         
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
+            'model_version': f"{r.model_name} ({r.version})",
             'strategy': r.strategy_type,
             'bertscore': float(r.bertscore_f1) if r.bertscore_f1 else None,
             'bleu': float(r.bleu) if r.bleu else None,
@@ -89,14 +92,15 @@ def interpret_effect_size(d):
         return "large"
 
 
-def compare_models_statistically(df, model1="gpt-4o-mini", model2="gemini-2.0-flash"):
+def compare_models_statistically(df, model1="gpt-4o-mini (v1)", model2="gemini-2.0-flash (v1)"):
     """
-    Perform statistical comparisons between two models.
+    Perform statistical comparisons between two model+version combinations.
+    model1/model2 should be 'model_name (version)' strings.
     Returns DataFrame with test results.
     """
-    # Filter data for both models
-    df1 = df[df['model'] == model1].copy()
-    df2 = df[df['model'] == model2].copy()
+    # Filter data for both model+version combinations
+    df1 = df[df['model_version'] == model1].copy()
+    df2 = df[df['model_version'] == model2].copy()
     
     metrics = ['bertscore', 'bleu', 'sari', 'fkgl_delta', 'fre_delta', 
                'fkgl_output', 'fre_output']
@@ -166,8 +170,8 @@ def compare_models_statistically(df, model1="gpt-4o-mini", model2="gemini-2.0-fl
     return pd.DataFrame(results)
 
 
-def compare_by_strategy(df, model1="gpt-4o-mini", model2="gemini-2.0-flash"):
-    """Compare models within each strategy."""
+def compare_by_strategy(df, model1="gpt-4o-mini (v1)", model2="gemini-2.0-flash (v1)"):
+    """Compare model+version pairs within each strategy."""
     strategies = df['strategy'].unique()
     all_results = []
     
@@ -221,18 +225,56 @@ def main():
     df = get_detailed_results()
     print(f"✓ Loaded {len(df)} results")
     
-    # Overall comparison
-    print("\n2. Performing overall statistical comparison...")
-    df_comparison = compare_models_statistically(df)
-    print_comparison_summary(df_comparison)
-    export_comparison(df_comparison, "statistical_comparison_overall.csv")
+    # Show available model+version combinations
+    model_versions = sorted(df['model_version'].unique())
+    print(f"\nAvailable model+version combinations:")
+    for mv in model_versions:
+        print(f"  - {mv} ({len(df[df['model_version'] == mv])} samples)")
     
-    # Comparison by strategy
-    print("\n3. Performing comparison by strategy...")
-    df_strategy_comparison = compare_by_strategy(df)
-    if not df_strategy_comparison.empty:
-        export_comparison(df_strategy_comparison, "statistical_comparison_by_strategy.csv")
-        print(f"✓ Compared across {df_strategy_comparison['strategy'].nunique()} strategies")
+    # Define comparison pairs
+    # 1. Best model overall (gpt-4o-mini v2 vs gemini v1)
+    # 2. v1 vs v2 for models that have both
+    comparison_pairs = []
+    
+    # All v1 models: compare against gpt-4o-mini v1 as baseline
+    baseline = "gpt-4o-mini (v1)"
+    for mv in model_versions:
+        if mv != baseline:
+            comparison_pairs.append((baseline, mv))
+    
+    all_comparisons = []
+    for model1, model2 in comparison_pairs:
+        print(f"\n{'='*100}")
+        print(f"COMPARING: {model1}  vs  {model2}")
+        print(f"{'='*100}")
+        df_comparison = compare_models_statistically(df, model1, model2)
+        print_comparison_summary(df_comparison)
+        df_comparison['pair'] = f"{model1} vs {model2}"
+        all_comparisons.append(df_comparison)
+    
+    # Export all comparisons
+    if all_comparisons:
+        df_all = pd.concat(all_comparisons, ignore_index=True)
+        export_comparison(df_all, "statistical_comparison_overall.csv")
+    
+    # Comparison by strategy (gpt-4o-mini v1 vs v2)
+    if "gpt-4o-mini (v2)" in model_versions:
+        print(f"\n{'='*100}")
+        print("STRATEGY BREAKDOWN: gpt-4o-mini v1 vs v2")
+        print(f"{'='*100}")
+        df_strategy_comparison = compare_by_strategy(df, "gpt-4o-mini (v1)", "gpt-4o-mini (v2)")
+        if not df_strategy_comparison.empty:
+            export_comparison(df_strategy_comparison, "statistical_comparison_by_strategy.csv")
+            print(f"✓ Compared across {df_strategy_comparison['strategy'].nunique()} strategies")
+    
+    if "llama3.2 (v2)" in model_versions:
+        print(f"\n{'='*100}")
+        print("STRATEGY BREAKDOWN: llama3.2 v1 vs v2")
+        print(f"{'='*100}")
+        df_llama_comparison = compare_by_strategy(df, "llama3.2 (v1)", "llama3.2 (v2)")
+        if not df_llama_comparison.empty:
+            export_comparison(df_llama_comparison, "statistical_comparison_llama_v1_v2_by_strategy.csv")
+            print(f"✓ Compared across {df_llama_comparison['strategy'].nunique()} strategies")
     
     print("\n" + "="*100)
     print("✓ Statistical comparison complete!")
