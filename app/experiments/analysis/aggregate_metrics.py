@@ -30,6 +30,7 @@ def aggregate_overall_by_model():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             # Quality metrics (higher is better)
             func.avg(Evaluation.bertscore_f1).label('avg_bertscore'),
             func.stddev(Evaluation.bertscore_f1).label('std_bertscore'),
@@ -45,6 +46,11 @@ def aggregate_overall_by_model():
             func.stddev(Evaluation.sari).label('std_sari'),
             func.min(Evaluation.sari).label('min_sari'),
             func.max(Evaluation.sari).label('max_sari'),
+            
+            func.avg(Evaluation.perplexity).label('avg_perplexity'),
+            func.stddev(Evaluation.perplexity).label('std_perplexity'),
+            func.min(Evaluation.perplexity).label('min_perplexity'),
+            func.max(Evaluation.perplexity).label('max_perplexity'),
             
             # Readability deltas (FKGL: negative is better, FRE: positive is better)
             func.avg(Evaluation.delta_fkgl).label('avg_delta_fkgl'),
@@ -65,16 +71,23 @@ def aggregate_overall_by_model():
             func.count(Evaluation.evaluation_id).label('count')
         ).join(
             PromptResult, Evaluation.result_id == PromptResult.result_id
+        ).join(
+            PromptVersion, PromptResult.prompt_version_id == PromptVersion.prompt_version_id
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
         ).group_by(
-            PromptResult.model_name
+            PromptResult.model_name,
+            PromptVersion.version
+        ).order_by(
+            PromptResult.model_name,
+            PromptVersion.version
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
             'count': r.count,
             # BERTScore
             'bertscore_mean': float(r.avg_bertscore) if r.avg_bertscore else None,
@@ -91,6 +104,11 @@ def aggregate_overall_by_model():
             'sari_std': float(r.std_sari) if r.std_sari else None,
             'sari_min': float(r.min_sari) if r.min_sari else None,
             'sari_max': float(r.max_sari) if r.max_sari else None,
+            # Perplexity
+            'perplexity_mean': float(r.avg_perplexity) if r.avg_perplexity else None,
+            'perplexity_std': float(r.std_perplexity) if r.std_perplexity else None,
+            'perplexity_min': float(r.min_perplexity) if r.min_perplexity else None,
+            'perplexity_max': float(r.max_perplexity) if r.max_perplexity else None,
             # FKGL Delta
             'fkgl_delta_mean': float(r.avg_delta_fkgl) if r.avg_delta_fkgl else None,
             'fkgl_delta_std': float(r.std_delta_fkgl) if r.std_delta_fkgl else None,
@@ -122,6 +140,7 @@ def aggregate_by_model_and_strategy():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type,
             # Quality metrics
             func.avg(Evaluation.bertscore_f1).label('avg_bertscore'),
@@ -130,6 +149,8 @@ def aggregate_by_model_and_strategy():
             func.stddev(Evaluation.bleu).label('std_bleu'),
             func.avg(Evaluation.sari).label('avg_sari'),
             func.stddev(Evaluation.sari).label('std_sari'),
+            func.avg(Evaluation.perplexity).label('avg_perplexity'),
+            func.stddev(Evaluation.perplexity).label('std_perplexity'),
             # Readability deltas
             func.avg(Evaluation.delta_fkgl).label('avg_delta_fkgl'),
             func.stddev(Evaluation.delta_fkgl).label('std_delta_fkgl'),
@@ -151,12 +172,18 @@ def aggregate_by_model_and_strategy():
             Evaluation.bertscore_f1.isnot(None)
         ).group_by(
             PromptResult.model_name,
+            PromptVersion.version,
+            Prompt.strategy_type
+        ).order_by(
+            PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
             'strategy': r.strategy_type,
             'count': r.count,
             # BERTScore
@@ -168,6 +195,9 @@ def aggregate_by_model_and_strategy():
             # SARI
             'sari_mean': float(r.avg_sari) if r.avg_sari else None,
             'sari_std': float(r.std_sari) if r.std_sari else None,
+            # Perplexity
+            'perplexity_mean': float(r.avg_perplexity) if r.avg_perplexity else None,
+            'perplexity_std': float(r.std_perplexity) if r.std_perplexity else None,
             # FKGL Delta
             'fkgl_delta_mean': float(r.avg_delta_fkgl) if r.avg_delta_fkgl else None,
             'fkgl_delta_std': float(r.std_delta_fkgl) if r.std_delta_fkgl else None,
@@ -195,6 +225,7 @@ def get_detailed_results():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type,
             PromptResult.item_id,
             Evaluation.result_id,
@@ -202,6 +233,7 @@ def get_detailed_results():
             Evaluation.bertscore_f1,
             Evaluation.bleu,
             Evaluation.sari,
+            Evaluation.perplexity,
             # Readability deltas
             Evaluation.delta_fkgl,
             Evaluation.fre_delta,
@@ -219,11 +251,16 @@ def get_detailed_results():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
+        ).order_by(
+            PromptResult.model_name,
+            PromptVersion.version,
+            Prompt.strategy_type
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
             'strategy': r.strategy_type,
             'item_id': str(r.item_id),
             'result_id': str(r.result_id),
@@ -231,6 +268,7 @@ def get_detailed_results():
             'bertscore': float(r.bertscore_f1) if r.bertscore_f1 else None,
             'bleu': float(r.bleu) if r.bleu else None,
             'sari': float(r.sari) if r.sari else None,
+            'perplexity': float(r.perplexity) if r.perplexity else None,
             # Readability deltas
             'fkgl_delta': float(r.delta_fkgl) if r.delta_fkgl else None,
             'fre_delta': float(r.fre_delta) if r.fre_delta else None,
@@ -247,6 +285,119 @@ def get_detailed_results():
         db.close()
 
 
+def aggregate_by_prompt_version():
+    """
+    Aggregate metrics by prompt_version_id and model_name.
+    Returns a dictionary where keys are prompt_version_id (as string) and values are DataFrames
+    with models as rows and metrics as columns.
+    Each DataFrame represents one table for a specific prompt_version_id.
+    """
+    db = SessionLocal()
+    
+    try:
+        results = db.query(
+            Evaluation.prompt_version_id,
+            PromptResult.model_name,
+            Prompt.strategy_type,
+            PromptVersion.version,
+            # Quality metrics
+            func.avg(Evaluation.bertscore_f1).label('bertscore_mean'),
+            func.stddev(Evaluation.bertscore_f1).label('bertscore_std'),
+            func.avg(Evaluation.bleu).label('bleu_mean'),
+            func.stddev(Evaluation.bleu).label('bleu_std'),
+            func.avg(Evaluation.sari).label('sari_mean'),
+            func.stddev(Evaluation.sari).label('sari_std'),
+            func.avg(Evaluation.perplexity).label('perplexity_mean'),
+            func.stddev(Evaluation.perplexity).label('perplexity_std'),
+            # Readability deltas
+            func.avg(Evaluation.delta_fkgl).label('delta_fkgl_mean'),
+            func.stddev(Evaluation.delta_fkgl).label('delta_fkgl_std'),
+            func.avg(Evaluation.fre_delta).label('fre_delta_mean'),
+            func.stddev(Evaluation.fre_delta).label('fre_delta_std'),
+            # Output readability
+            func.avg(Evaluation.fkgl_output).label('fkgl_output_mean'),
+            func.stddev(Evaluation.fkgl_output).label('fkgl_output_std'),
+            func.avg(Evaluation.fre_output).label('fre_output_mean'),
+            func.stddev(Evaluation.fre_output).label('fre_output_std'),
+            # Additional metrics
+            func.avg(Evaluation.entity_additions_rate).label('entity_additions_rate_mean'),
+            func.avg(Evaluation.number_mismatch_rate).label('number_mismatch_rate_mean'),
+            # Count
+            func.count(Evaluation.evaluation_id).label('count')
+        ).join(
+            PromptResult, Evaluation.result_id == PromptResult.result_id
+        ).join(
+            PromptVersion, Evaluation.prompt_version_id == PromptVersion.prompt_version_id
+        ).join(
+            Prompt, PromptVersion.prompt_id == Prompt.prompt_id
+        ).filter(
+            PromptResult.model_name.isnot(None),
+            Evaluation.bertscore_f1.isnot(None)
+        ).group_by(
+            Evaluation.prompt_version_id,
+            PromptResult.model_name,
+            Prompt.strategy_type,
+            PromptVersion.version
+        ).all()
+        
+        # Group by prompt_version_id
+        tables_by_prompt_version = {}
+        
+        for r in results:
+            prompt_version_id_str = str(r.prompt_version_id)
+            
+            if prompt_version_id_str not in tables_by_prompt_version:
+                tables_by_prompt_version[prompt_version_id_str] = {
+                    'strategy_type': r.strategy_type,
+                    'version': r.version,
+                    'data': []
+                }
+            
+            tables_by_prompt_version[prompt_version_id_str]['data'].append({
+                'model': r.model_name,
+                'count': r.count,
+                # Quality metrics
+                'BERTScore': float(r.bertscore_mean) if r.bertscore_mean else None,
+                'BERTScore_std': float(r.bertscore_std) if r.bertscore_std else None,
+                'BLEU': float(r.bleu_mean) if r.bleu_mean else None,
+                'BLEU_std': float(r.bleu_std) if r.bleu_std else None,
+                'SARI': float(r.sari_mean) if r.sari_mean else None,
+                'SARI_std': float(r.sari_std) if r.sari_std else None,
+                'Perplexity': float(r.perplexity_mean) if r.perplexity_mean else None,
+                'Perplexity_std': float(r.perplexity_std) if r.perplexity_std else None,
+                # Readability deltas
+                'FKGL_Delta': float(r.delta_fkgl_mean) if r.delta_fkgl_mean else None,
+                'FKGL_Delta_std': float(r.delta_fkgl_std) if r.delta_fkgl_std else None,
+                'FRE_Delta': float(r.fre_delta_mean) if r.fre_delta_mean else None,
+                'FRE_Delta_std': float(r.fre_delta_std) if r.fre_delta_std else None,
+                # Output readability
+                'FKGL_Output': float(r.fkgl_output_mean) if r.fkgl_output_mean else None,
+                'FKGL_Output_std': float(r.fkgl_output_std) if r.fkgl_output_std else None,
+                'FRE_Output': float(r.fre_output_mean) if r.fre_output_mean else None,
+                'FRE_Output_std': float(r.fre_output_std) if r.fre_output_std else None,
+                # Additional metrics
+                'Entity_Additions_Rate': float(r.entity_additions_rate_mean) if r.entity_additions_rate_mean else None,
+                'Number_Mismatch_Rate': float(r.number_mismatch_rate_mean) if r.number_mismatch_rate_mean else None,
+            })
+        
+        # Convert each group to a DataFrame
+        result_dict = {}
+        for prompt_version_id, info in tables_by_prompt_version.items():
+            df = pd.DataFrame(info['data'])
+            # Set model as index for cleaner table display
+            df.set_index('model', inplace=True)
+            result_dict[prompt_version_id] = {
+                'dataframe': df,
+                'strategy_type': info['strategy_type'],
+                'version': info['version']
+            }
+        
+        return result_dict
+        
+    finally:
+        db.close()
+
+
 def print_summary_table(df_overall):
     """Print a formatted summary table of overall metrics."""
     print("\n" + "="*100)
@@ -254,7 +405,7 @@ def print_summary_table(df_overall):
     print("="*100)
     
     for _, row in df_overall.iterrows():
-        print(f"\n{row['model'].upper()}:")
+        print(f"\n{row['model'].upper()} ({row['version']}):")
         print(f"  Samples: {row['count']}")
         print(f"\n  Quality Metrics (higher is better):")
         print(f"    BERTScore: {row['bertscore_mean']:.4f} ± {row['bertscore_std']:.4f} "
@@ -263,6 +414,8 @@ def print_summary_table(df_overall):
               f"[{row['bleu_min']:.4f}, {row['bleu_max']:.4f}]")
         print(f"    SARI:      {row['sari_mean']:.4f} ± {row['sari_std']:.4f} "
               f"[{row['sari_min']:.4f}, {row['sari_max']:.4f}]")
+        print(f"    Perplexity: {row['perplexity_mean']:.4f} ± {row['perplexity_std']:.4f} "
+              f"[{row['perplexity_min']:.4f}, {row['perplexity_max']:.4f}] (lower is better)")
         print(f"\n  Readability Improvement:")
         print(f"    FKGL Δ:    {row['fkgl_delta_mean']:.2f} ± {row['fkgl_delta_std']:.2f} "
               f"(negative = simpler, better)")
@@ -271,6 +424,34 @@ def print_summary_table(df_overall):
         print(f"\n  Output Readability:")
         print(f"    FKGL:      {row['fkgl_output_mean']:.2f} (lower = simpler)")
         print(f"    FRE:       {row['fre_output_mean']:.2f} (higher = easier)")
+
+
+def print_strategy_table(df_by_strategy):
+    """Print a formatted breakdown of metrics by model, version, and strategy."""
+    print("\n" + "="*100)
+    print("BREAKDOWN BY MODEL × VERSION × STRATEGY (40 samples each)")
+    print("="*100)
+
+    current_group = None
+    for _, row in df_by_strategy.iterrows():
+        group = f"{row['model'].upper()} ({row['version']})"
+        if group != current_group:
+            print(f"\n{'─'*100}")
+            print(f"  {group}")
+            print(f"{'─'*100}")
+            print(f"  {'Strategy':<14} {'Count':>6}  {'BERTScore':>10}  {'BLEU':>8}  {'SARI':>8}  {'FKGL Δ':>8}  {'FRE Δ':>8}")
+            current_group = group
+
+        fkgl = f"{row['fkgl_delta_mean']:.2f}" if row['fkgl_delta_mean'] == row['fkgl_delta_mean'] else "  nan"
+        fre  = f"{row['fre_delta_mean']:.2f}"  if row['fre_delta_mean']  == row['fre_delta_mean']  else "  nan"
+        print(
+            f"  {row['strategy']:<14} {row['count']:>6}  "
+            f"{row['bertscore_mean']:>10.4f}  "
+            f"{row['bleu_mean']:>8.4f}  "
+            f"{row['sari_mean']:>8.4f}  "
+            f"{fkgl:>8}  "
+            f"{fre:>8}"
+        )
 
 
 def export_to_csv(df, filename, output_dir=None):
@@ -287,6 +468,101 @@ def export_to_csv(df, filename, output_dir=None):
     return filepath
 
 
+def print_tables_by_prompt_version(tables_dict):
+    """
+    Print tables grouped by prompt_version_id.
+    
+    Args:
+        tables_dict: Dictionary returned by aggregate_by_prompt_version()
+    """
+    print("\n" + "="*120)
+    print("EVALUATION RESULTS BY PROMPT VERSION")
+    print("="*120)
+    
+    for prompt_version_id, info in tables_dict.items():
+        df = info['dataframe']
+        strategy = info['strategy_type']
+        version = info['version']
+        
+        print(f"\n{'='*120}")
+        print(f"Prompt Version ID: {prompt_version_id}")
+        print(f"Strategy Type: {strategy}")
+        print(f"Version: {version}")
+        print(f"{'='*120}\n")
+        
+        # Display the table
+        print(df.to_string())
+        print(f"\nTotal models: {len(df)}")
+        print(f"{'='*120}\n")
+
+
+def export_tables_by_prompt_version(tables_dict, output_dir=None):
+    """
+    Export tables grouped by prompt_version_id to CSV files.
+    
+    Args:
+        tables_dict: Dictionary returned by aggregate_by_prompt_version()
+        output_dir: Directory to save CSV files (default: outputs/csv/prompt_versions/)
+    
+    Returns:
+        List of exported file paths
+    """
+    if output_dir is None:
+        output_dir = Path(__file__).parent / "outputs" / "csv" / "prompt_versions"
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    exported_files = []
+    
+    for prompt_version_id, info in tables_dict.items():
+        df = info['dataframe']
+        strategy = info['strategy_type']
+        version = info['version']
+        
+        # Create filename with strategy and version info
+        safe_strategy = strategy.replace(" ", "_").lower()
+        safe_version = version.replace(" ", "_").lower() if version else "unknown"
+        filename = f"prompt_version_{prompt_version_id[:8]}_{safe_strategy}_v{safe_version}.csv"
+        
+        filepath = output_dir / filename
+        df.to_csv(filepath, index=True)  # index=True to include model names
+        exported_files.append(filepath)
+        print(f"✓ Exported table for prompt_version_id {prompt_version_id[:8]}... to {filepath}")
+    
+    return exported_files
+
+
+def generate_results_by_prompt_version(print_tables=True, export_csv=True):
+    """
+    Generate and optionally display/export results tables grouped by prompt_version_id.
+    
+    Args:
+        print_tables: If True, print tables to console
+        export_csv: If True, export tables to CSV files
+    
+    Returns:
+        Dictionary of tables by prompt_version_id
+    """
+    print("\nGenerating results tables by prompt_version_id...")
+    tables_dict = aggregate_by_prompt_version()
+    
+    if not tables_dict:
+        print("⚠ No data found for prompt version aggregation")
+        return {}
+    
+    print(f"✓ Found {len(tables_dict)} prompt version(s)")
+    
+    if print_tables:
+        print_tables_by_prompt_version(tables_dict)
+    
+    if export_csv:
+        exported_files = export_tables_by_prompt_version(tables_dict)
+        print(f"\n✓ Exported {len(exported_files)} table(s) to CSV")
+    
+    return tables_dict
+
+
 def main():
     """Main function to run all aggregations and exports."""
     print("Starting metric aggregation...")
@@ -300,11 +576,11 @@ def main():
     else:
         print("⚠ No data found for overall aggregation")
     
-    # 2. Aggregation by model + strategy
-    print("\n2. Aggregating metrics by model and strategy...")
+    # 2. Aggregation by model + version + strategy
+    print("\n2. Aggregating metrics by model, version, and strategy...")
     df_by_strategy = aggregate_by_model_and_strategy()
     if not df_by_strategy.empty:
-        print(f"\n✓ Found {len(df_by_strategy)} model-strategy combinations")
+        print_strategy_table(df_by_strategy)
         export_to_csv(df_by_strategy, "model_comparison_by_strategy.csv")
     else:
         print("⚠ No data found for strategy-based aggregation")

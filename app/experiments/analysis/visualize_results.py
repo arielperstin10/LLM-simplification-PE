@@ -30,10 +30,12 @@ def get_detailed_results():
     try:
         results = db.query(
             PromptResult.model_name,
+            PromptVersion.version,
             Prompt.strategy_type,
             Evaluation.bertscore_f1,
             Evaluation.bleu,
             Evaluation.sari,
+            Evaluation.perplexity,
             Evaluation.delta_fkgl,
             Evaluation.fre_delta,
             Evaluation.fkgl_output,
@@ -41,7 +43,7 @@ def get_detailed_results():
         ).join(
             PromptResult, Evaluation.result_id == PromptResult.result_id
         ).join(
-            PromptVersion, Evaluation.prompt_version_id == PromptVersion.prompt_version_id
+            PromptVersion, PromptResult.prompt_version_id == PromptVersion.prompt_version_id
         ).join(
             Prompt, PromptVersion.prompt_id == Prompt.prompt_id
         ).filter(
@@ -51,10 +53,13 @@ def get_detailed_results():
         
         df = pd.DataFrame([{
             'model': r.model_name,
+            'version': r.version,
+            'model_version': f"{r.model_name} ({r.version})",
             'strategy': r.strategy_type,
             'bertscore': float(r.bertscore_f1) if r.bertscore_f1 else None,
             'bleu': float(r.bleu) if r.bleu else None,
             'sari': float(r.sari) if r.sari else None,
+            'perplexity': float(r.perplexity) if r.perplexity else None,
             'fkgl_delta': float(r.delta_fkgl) if r.delta_fkgl else None,
             'fre_delta': float(r.fre_delta) if r.fre_delta else None,
             'fkgl_output': float(r.fkgl_output) if r.fkgl_output else None,
@@ -88,25 +93,33 @@ def plot_bar_charts_overall(df):
     """Create bar charts comparing overall metrics."""
     print("\nCreating bar charts for overall comparison...")
     
-    # Aggregate by model
-    df_agg = df.groupby('model').agg({
+    # Aggregate by model_version
+    df_agg = df.groupby('model_version').agg({
         'bertscore': 'mean',
         'bleu': 'mean',
         'sari': 'mean',
+        'perplexity': 'mean',
         'fkgl_delta': 'mean',
         'fre_delta': 'mean',
     }).reset_index()
     
-    # Quality metrics (higher is better)
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    # Quality metrics: higher is better (bertscore, bleu, sari); perplexity lower is better
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
     
-    metrics_quality = ['bertscore', 'bleu', 'sari']
-    for idx, metric in enumerate(metrics_quality):
+    metrics_quality = ['bertscore', 'bleu', 'sari', 'perplexity']
+    titles = [
+        'BERTScore (Higher is Better)',
+        'BLEU (Higher is Better)',
+        'SARI (Higher is Better)',
+        'Perplexity (Lower is Better)',
+    ]
+    for idx, (metric, title) in enumerate(zip(metrics_quality, titles)):
         ax = axes[idx]
         df_agg.plot(x='model', y=metric, kind='bar', ax=ax, 
                    color=['#3498db', '#e74c3c'], legend=False)
-        ax.set_title(f'{metric.upper()} Score (Higher is Better)', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Score')
+        ax.set_title(title, fontsize=12, fontweight='bold')
+        ax.set_ylabel('Score' if metric != 'perplexity' else 'Perplexity')
         ax.set_xlabel('Model')
         ax.tick_params(axis='x', rotation=0)
         ax.grid(axis='y', alpha=0.3)
@@ -119,23 +132,23 @@ def plot_bar_charts_overall(df):
     
     # FKGL Delta (more negative is better)
     ax = axes[0]
-    df_agg.plot(x='model', y='fkgl_delta', kind='bar', ax=ax,
-               color=['#3498db', '#e74c3c'], legend=False)
+    df_agg.plot(x='model_version', y='fkgl_delta', kind='bar', ax=ax,
+               color=colors, legend=False)
     ax.set_title('FKGL Delta (More Negative = Simpler)', fontsize=12, fontweight='bold')
     ax.set_ylabel('FKGL Delta')
-    ax.set_xlabel('Model')
-    ax.tick_params(axis='x', rotation=0)
+    ax.set_xlabel('Model (Version)')
+    ax.tick_params(axis='x', rotation=30)
     ax.grid(axis='y', alpha=0.3)
     ax.axhline(y=0, color='black', linestyle='--', linewidth=0.5)
     
     # FRE Delta (more positive is better)
     ax = axes[1]
-    df_agg.plot(x='model', y='fre_delta', kind='bar', ax=ax,
-               color=['#3498db', '#e74c3c'], legend=False)
+    df_agg.plot(x='model_version', y='fre_delta', kind='bar', ax=ax,
+               color=colors, legend=False)
     ax.set_title('FRE Delta (More Positive = Easier)', fontsize=12, fontweight='bold')
     ax.set_ylabel('FRE Delta')
-    ax.set_xlabel('Model')
-    ax.tick_params(axis='x', rotation=0)
+    ax.set_xlabel('Model (Version)')
+    ax.tick_params(axis='x', rotation=30)
     ax.grid(axis='y', alpha=0.3)
     ax.axhline(y=0, color='black', linestyle='--', linewidth=0.5)
     
@@ -147,18 +160,20 @@ def plot_box_plots(df):
     """Create box plots showing distribution of metrics."""
     print("\nCreating box plots for distribution comparison...")
     
-    # Quality metrics
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    # Quality metrics (including perplexity)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
     
-    metrics_quality = ['bertscore', 'bleu', 'sari']
-    for idx, metric in enumerate(metrics_quality):
+    metrics_quality = ['bertscore', 'bleu', 'sari', 'perplexity']
+    titles = ['BERTScore', 'BLEU', 'SARI', 'Perplexity (lower is better)']
+    for idx, (metric, title) in enumerate(zip(metrics_quality, titles)):
         ax = axes[idx]
-        df.boxplot(column=metric, by='model', ax=ax, 
+        df.boxplot(column=metric, by='model_version', ax=ax,
                   patch_artist=True,
                   boxprops=dict(facecolor='lightblue', alpha=0.7))
-        ax.set_title(f'{metric.upper()} Distribution', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=12, fontweight='bold')
         ax.set_xlabel('Model')
-        ax.set_ylabel('Score')
+        ax.set_ylabel('Score' if metric != 'perplexity' else 'Perplexity')
         ax.get_figure().suptitle('')  # Remove default title
     
     plt.tight_layout()
@@ -169,23 +184,25 @@ def plot_box_plots(df):
     
     # FKGL Delta
     ax = axes[0]
-    df.boxplot(column='fkgl_delta', by='model', ax=ax,
+    df.boxplot(column='fkgl_delta', by='model_version', ax=ax,
               patch_artist=True,
               boxprops=dict(facecolor='lightgreen', alpha=0.7))
     ax.set_title('FKGL Delta Distribution', fontsize=12, fontweight='bold')
-    ax.set_xlabel('Model')
+    ax.set_xlabel('Model (Version)')
     ax.set_ylabel('FKGL Delta')
+    ax.tick_params(axis='x', rotation=30)
     ax.get_figure().suptitle('')
     ax.axhline(y=0, color='red', linestyle='--', linewidth=1, alpha=0.5)
     
     # FRE Delta
     ax = axes[1]
-    df.boxplot(column='fre_delta', by='model', ax=ax,
+    df.boxplot(column='fre_delta', by='model_version', ax=ax,
               patch_artist=True,
               boxprops=dict(facecolor='lightcoral', alpha=0.7))
     ax.set_title('FRE Delta Distribution', fontsize=12, fontweight='bold')
-    ax.set_xlabel('Model')
+    ax.set_xlabel('Model (Version)')
     ax.set_ylabel('FRE Delta')
+    ax.tick_params(axis='x', rotation=30)
     ax.get_figure().suptitle('')
     ax.axhline(y=0, color='red', linestyle='--', linewidth=1, alpha=0.5)
     
@@ -201,8 +218,8 @@ def plot_scatter_plots(df):
     
     # BERTScore vs SARI
     ax = axes[0, 0]
-    for model in df['model'].unique():
-        df_model = df[df['model'] == model]
+    for model in df['model_version'].unique():
+        df_model = df[df['model_version'] == model]
         ax.scatter(df_model['bertscore'], df_model['sari'], 
                   label=model, alpha=0.6, s=50)
     ax.set_xlabel('BERTScore')
@@ -213,8 +230,8 @@ def plot_scatter_plots(df):
     
     # BLEU vs SARI
     ax = axes[0, 1]
-    for model in df['model'].unique():
-        df_model = df[df['model'] == model]
+    for model in df['model_version'].unique():
+        df_model = df[df['model_version'] == model]
         ax.scatter(df_model['bleu'], df_model['sari'], 
                   label=model, alpha=0.6, s=50)
     ax.set_xlabel('BLEU')
@@ -225,8 +242,8 @@ def plot_scatter_plots(df):
     
     # FKGL Delta vs FRE Delta
     ax = axes[1, 0]
-    for model in df['model'].unique():
-        df_model = df[df['model'] == model]
+    for model in df['model_version'].unique():
+        df_model = df[df['model_version'] == model]
         ax.scatter(df_model['fkgl_delta'], df_model['fre_delta'], 
                   label=model, alpha=0.6, s=50)
     ax.set_xlabel('FKGL Delta (more negative = simpler)')
@@ -239,8 +256,8 @@ def plot_scatter_plots(df):
     
     # BERTScore vs FKGL Delta
     ax = axes[1, 1]
-    for model in df['model'].unique():
-        df_model = df[df['model'] == model]
+    for model in df['model_version'].unique():
+        df_model = df[df['model_version'] == model]
         ax.scatter(df_model['bertscore'], df_model['fkgl_delta'], 
                   label=model, alpha=0.6, s=50)
     ax.set_xlabel('BERTScore')
@@ -258,20 +275,21 @@ def plot_heatmap_by_strategy(df):
     """Create heatmap comparing models across strategies."""
     print("\nCreating heatmap by strategy...")
     
-    # Aggregate by model and strategy
-    df_agg = df.groupby(['model', 'strategy']).agg({
+    # Aggregate by model_version and strategy
+    df_agg = df.groupby(['model_version', 'strategy']).agg({
         'bertscore': 'mean',
         'bleu': 'mean',
         'sari': 'mean',
+        'perplexity': 'mean',
         'fkgl_delta': 'mean',
         'fre_delta': 'mean',
     }).reset_index()
     
-    # Pivot for heatmap
-    metrics = ['bertscore', 'bleu', 'sari', 'fkgl_delta', 'fre_delta']
+    # Pivot for heatmap (delta metrics use center=0; perplexity lower is better, no center)
+    metrics = ['bertscore', 'bleu', 'sari', 'perplexity', 'fkgl_delta', 'fre_delta']
     
     for metric in metrics:
-        df_pivot = df_agg.pivot(index='strategy', columns='model', values=metric)
+        df_pivot = df_agg.pivot(index='strategy', columns='model_version', values=metric)
         
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.heatmap(df_pivot, annot=True, fmt='.3f', cmap='RdYlGn', 
@@ -287,25 +305,28 @@ def plot_strategy_comparison(df):
     """Create grouped bar charts comparing models across strategies."""
     print("\nCreating strategy comparison charts...")
     
-    # Aggregate by model and strategy
-    df_agg = df.groupby(['model', 'strategy']).agg({
+    # Aggregate by model_version and strategy
+    df_agg = df.groupby(['model_version', 'strategy']).agg({
         'bertscore': 'mean',
         'bleu': 'mean',
         'sari': 'mean',
+        'perplexity': 'mean',
     }).reset_index()
     
-    # Quality metrics
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    # Quality metrics (including perplexity)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
     
-    metrics = ['bertscore', 'bleu', 'sari']
-    for idx, metric in enumerate(metrics):
+    metrics = ['bertscore', 'bleu', 'sari', 'perplexity']
+    titles = ['BERTScore', 'BLEU', 'SARI', 'Perplexity (lower is better)']
+    for idx, (metric, title) in enumerate(zip(metrics, titles)):
         ax = axes[idx]
         df_pivot = df_agg.pivot(index='strategy', columns='model', values=metric)
         df_pivot.plot(kind='bar', ax=ax, color=['#3498db', '#e74c3c'])
-        ax.set_title(f'{metric.upper()} by Strategy', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Score')
+        ax.set_title(f'{title} by Strategy', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Score' if metric != 'perplexity' else 'Perplexity')
         ax.set_xlabel('Strategy')
-        ax.legend(title='Model')
+        ax.legend(title='Model (Version)', fontsize=7)
         ax.tick_params(axis='x', rotation=45)
         ax.grid(axis='y', alpha=0.3)
     
