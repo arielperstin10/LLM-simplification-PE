@@ -26,6 +26,7 @@ class PromptVersion(Base):
     prompt_id = Column(UUID(as_uuid=True), ForeignKey("prompts.prompt_id", ondelete="CASCADE"), nullable=False)
     version = Column(String, nullable=False)
     template_text = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
 

@@ -29,6 +29,7 @@ def get_detailed_results():
             Evaluation.bertscore_f1,
             Evaluation.bleu,
             Evaluation.sari,
+            Evaluation.perplexity,
             Evaluation.delta_fkgl,
             Evaluation.fre_delta,
             Evaluation.fkgl_output,
@@ -52,6 +53,7 @@ def get_detailed_results():
             'bertscore': float(r.bertscore_f1) if r.bertscore_f1 else None,
             'bleu': float(r.bleu) if r.bleu else None,
             'sari': float(r.sari) if r.sari else None,
+            'perplexity': float(r.perplexity) if r.perplexity else None,
             'fkgl_delta': float(r.delta_fkgl) if r.delta_fkgl else None,
             'fre_delta': float(r.fre_delta) if r.fre_delta else None,
             'fkgl_output': float(r.fkgl_output) if r.fkgl_output else None,
@@ -102,7 +104,7 @@ def compare_models_statistically(df, model1="gpt-4o-mini (v1)", model2="gemini-2
     df1 = df[df['model_version'] == model1].copy()
     df2 = df[df['model_version'] == model2].copy()
     
-    metrics = ['bertscore', 'bleu', 'sari', 'fkgl_delta', 'fre_delta', 
+    metrics = ['bertscore', 'bleu', 'sari', 'perplexity', 'fkgl_delta', 'fre_delta', 
                'fkgl_output', 'fre_output']
     
     results = []
@@ -142,11 +144,11 @@ def compare_models_statistically(df, model1="gpt-4o-mini (v1)", model2="gemini-2
         
         # Determine which model is better
         # For metrics where higher is better: bertscore, bleu, sari, fre_delta, fre_output
-        # For metrics where lower is better: fkgl_delta (more negative), fkgl_output
+        # For metrics where lower is better: perplexity, fkgl_delta (more negative), fkgl_output
         if metric in ['bertscore', 'bleu', 'sari', 'fre_delta', 'fre_output']:
             better_model = model1 if mean1 > mean2 else model2
             difference = mean1 - mean2
-        else:  # fkgl_delta, fkgl_output (lower is better)
+        else:  # perplexity, fkgl_delta, fkgl_output (lower is better)
             better_model = model1 if mean1 < mean2 else model2
             difference = mean1 - mean2
         
