@@ -116,8 +116,8 @@ def plot_bar_charts_overall(df):
     ]
     for idx, (metric, title) in enumerate(zip(metrics_quality, titles)):
         ax = axes[idx]
-        df_agg.plot(x='model', y=metric, kind='bar', ax=ax, 
-                   color=['#3498db', '#e74c3c'], legend=False)
+        df_agg.plot(x='model_version', y=metric, kind='bar', ax=ax, 
+                   legend=False)
         ax.set_title(title, fontsize=12, fontweight='bold')
         ax.set_ylabel('Score' if metric != 'perplexity' else 'Perplexity')
         ax.set_xlabel('Model')
@@ -129,11 +129,13 @@ def plot_bar_charts_overall(df):
     
     # Readability deltas
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    
+    n_models = len(df_agg)
+    colors = plt.cm.Set3(np.linspace(0, 1, max(n_models, 1)))
+
     # FKGL Delta (more negative is better)
     ax = axes[0]
     df_agg.plot(x='model_version', y='fkgl_delta', kind='bar', ax=ax,
-               color=colors, legend=False)
+               color=colors[:n_models], legend=False)
     ax.set_title('FKGL Delta (More Negative = Simpler)', fontsize=12, fontweight='bold')
     ax.set_ylabel('FKGL Delta')
     ax.set_xlabel('Model (Version)')
@@ -144,7 +146,7 @@ def plot_bar_charts_overall(df):
     # FRE Delta (more positive is better)
     ax = axes[1]
     df_agg.plot(x='model_version', y='fre_delta', kind='bar', ax=ax,
-               color=colors, legend=False)
+               color=colors[:n_models], legend=False)
     ax.set_title('FRE Delta (More Positive = Easier)', fontsize=12, fontweight='bold')
     ax.set_ylabel('FRE Delta')
     ax.set_xlabel('Model (Version)')
@@ -321,7 +323,7 @@ def plot_strategy_comparison(df):
     titles = ['BERTScore', 'BLEU', 'SARI', 'Perplexity (lower is better)']
     for idx, (metric, title) in enumerate(zip(metrics, titles)):
         ax = axes[idx]
-        df_pivot = df_agg.pivot(index='strategy', columns='model', values=metric)
+        df_pivot = df_agg.pivot(index='strategy', columns='model_version', values=metric)
         df_pivot.plot(kind='bar', ax=ax, color=['#3498db', '#e74c3c'])
         ax.set_title(f'{title} by Strategy', fontsize=12, fontweight='bold')
         ax.set_ylabel('Score' if metric != 'perplexity' else 'Perplexity')
