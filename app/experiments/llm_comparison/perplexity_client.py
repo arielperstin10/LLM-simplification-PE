@@ -61,24 +61,24 @@ finally:
     db.close()
 
 # Create agents with instructions from database
-# Using sonar-pro as a good general-purpose Perplexity model
+# Using sonar (basic) - faster/cheaper than sonar-pro
 # The agents library uses litellm under the hood with litellm/ prefix format
 ZeroAgent = Agent(
     name="ZeroAgent",
     instructions=InstructionZeroShotPrompt.replace("{INPUT_TEXT}", ""),
-    model="litellm/perplexity/sonar-pro"
+    model="litellm/perplexity/sonar"
 )
 
 StructuredAgent = Agent(
     name="StructuredAgent",
     instructions=InstructionStructuredPrompt.replace("{INPUT_TEXT}", ""),
-    model="litellm/perplexity/sonar-pro"
+    model="litellm/perplexity/sonar"
 )
 
 ConstraintAgent = Agent(
     name="ConstraintAgent",
     instructions=InstructionConstraintPrompt.replace("{INPUT_TEXT}", ""),
-    model="litellm/perplexity/sonar-pro",
+    model="litellm/perplexity/sonar",
 )
 
 # Iterate and call LLM 3 times for each item (zero-shot, structured, constraint)
@@ -158,7 +158,7 @@ async def run_comparison():
                     prompt_version_id=prompt_version_id,
                     input_text=text_adv,
                     output_text=output_text,
-                    model_name="sonar-pro"
+                    model_name="sonar"
                 )
                 
                 db_session.add(prompt_result)
