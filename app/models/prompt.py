@@ -46,6 +46,7 @@ class PromptResult(Base):
     output_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     model_name = Column(Text,nullable=True)
+    description = Column(Text, nullable=True)
 
     # Relationships
     dataset_item = relationship("DatasetItem", back_populates="results")

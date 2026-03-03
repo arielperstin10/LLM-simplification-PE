@@ -2,6 +2,7 @@
 Calculate FRE (Flesch Reading Ease) for PromptResults and store in Evaluation table.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,12 +16,12 @@ from app.models.dataset import DatasetItem
 from app.models.evaluation import Evaluation
 
 
-def calculate_fre():
+def calculate_fre(description=None):
     db = SessionLocal()
     
     try:
         # Get all PromptResults with their corresponding DatasetItems
-        results = db.query(
+        query = db.query(
             PromptResult.result_id,
             PromptResult.prompt_version_id,
             PromptResult.input_text,
@@ -31,7 +32,10 @@ def calculate_fre():
         ).filter(
             PromptResult.output_text.isnot(None),
             PromptResult.input_text.isnot(None)
-        ).all()
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.all()
         
         # Calculate FRE for each individual PromptResult
         processed = 0
@@ -102,5 +106,8 @@ def calculate_fre():
 
 
 if __name__ == "__main__":
-    calculate_fre()
+    parser = argparse.ArgumentParser(description="Calculate FRE for PromptResults")
+    parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    args = parser.parse_args()
+    calculate_fre(description=args.description)
 
