@@ -1,6 +1,7 @@
 """
 Calculate Perplexity scores for PromptResults and store in Evaluation table.
 
+
 Perplexity measures fluency/grammatical correctness by computing how "surprised"
 a language model is by the text. Lower perplexity = more fluent/natural text.
 
@@ -15,6 +16,7 @@ We use a fixed pretrained model (distilgpt2) as evaluator:
 - Processes texts individually with proper error handling
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -66,7 +68,7 @@ def calculate_perplexity_single(text, model, tokenizer, device, max_length=1024)
         return None
 
 
-def calculate_perplexity():
+def calculate_perplexity(description=None):
     db = SessionLocal()
     
     try:
@@ -83,14 +85,17 @@ def calculate_perplexity():
         print(f"Model loaded on {device}")
         
         # Get all PromptResults with non-null output_text
-        results = db.query(
+        query = db.query(
             PromptResult.result_id,
             PromptResult.prompt_version_id,
             PromptResult.output_text
         ).filter(
             PromptResult.output_text.isnot(None),
             PromptResult.output_text != ""
-        ).all()
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.all()
         
         if not results:
             print("No PromptResults found with output_text")
@@ -163,4 +168,7 @@ def calculate_perplexity():
 
 
 if __name__ == "__main__":
-    calculate_perplexity()
+    parser = argparse.ArgumentParser(description="Calculate Perplexity for PromptResults")
+    parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    args = parser.parse_args()
+    calculate_perplexity(description=args.description)

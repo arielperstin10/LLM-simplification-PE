@@ -2,6 +2,7 @@
 Calculate FKGL (Flesch-Kincaid Grade Level) for PromptResults and store in Evaluation table.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -15,12 +16,12 @@ from app.models.dataset import DatasetItem
 from app.models.evaluation import Evaluation
 
 
-def calculate_fkgl():
+def calculate_fkgl(description=None):
     db = SessionLocal()
     
     try:
         # Get all PromptResults with their corresponding DatasetItems
-        results = db.query(
+        query = db.query(
             PromptResult.result_id,
             PromptResult.prompt_version_id,
             PromptResult.input_text,
@@ -31,7 +32,10 @@ def calculate_fkgl():
         ).filter(
             PromptResult.output_text.isnot(None),
             PromptResult.input_text.isnot(None)
-        ).all()
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.all()
         
         # Calculate FKGL for each individual PromptResult
         processed = 0
@@ -102,5 +106,8 @@ def calculate_fkgl():
 
 
 if __name__ == "__main__":
-    calculate_fkgl()
+    parser = argparse.ArgumentParser(description="Calculate FKGL for PromptResults")
+    parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    args = parser.parse_args()
+    calculate_fkgl(description=args.description)
 

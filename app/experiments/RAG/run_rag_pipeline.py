@@ -20,9 +20,7 @@ from app.experiments.RAG.build_embedding_index_test_set import get_test_items
 from app.experiments.RAG.retrieval import retrieve_top_k
 from app.experiments.llm_comparison.model_registry import call_llm, get_model_display_name, MODEL_CONFIG
 
-RAG_BRIDGE_SENTENCE = (
-    "Now apply similar simplification principles while STRICTLY following the instructions below."
-)
+RAG_EXAMPLES_HEADER = "Here are some similar examples to the following text:"
 
 
 def build_rag_prompt(
@@ -31,22 +29,17 @@ def build_rag_prompt(
     input_text: str,
 ) -> str:
     """
-    Build RAG-augmented prompt. Prepends examples and bridge sentence,
-    appends original template unchanged, replaces {INPUT_TEXT}.
+    Build RAG-augmented prompt. Template + target text first, then examples below.
 
     Does NOT modify the original template. RAG acts as external augmentation only.
     """
+    template_with_input = original_template.replace("{INPUT_TEXT}", input_text)
     if not retrieved_examples:
-        return original_template.replace("{INPUT_TEXT}", input_text)
+        return template_with_input
 
-    lines = ["Here are similar texts and their simplifications for reference:"]
+    lines = [template_with_input, "", RAG_EXAMPLES_HEADER]
     for i, (text_adv, text_ele) in enumerate(retrieved_examples, 1):
         lines.append(f"Example {i} - Advanced: {text_adv} -> Simplified: {text_ele}")
-
-    lines.append("")
-    lines.append(RAG_BRIDGE_SENTENCE)
-    lines.append("")
-    lines.append(original_template.replace("{INPUT_TEXT}", input_text))
 
     return "\n".join(lines)
 

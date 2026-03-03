@@ -40,9 +40,22 @@ python -m app.experiments.RAG.run_rag_pipeline --model openai --description "RAG
 
 For each of the 40 test items:
 
-1. **Retrieve** – Uses the item’s stored embedding to find the top-k most similar texts in the 149 corpus items (cosine similarity).
-2. **Build prompt** – Prepends those examples as “Advanced → Simplified” pairs, then appends the original prompt template (zeroshot/structured/constraint).
+1. **Retrieve** – Uses the item's stored embedding to find the top-k most similar texts in the 149 corpus items (cosine similarity).
+2. **Build prompt** – Puts template + target text first, then examples below ("Here are some similar examples to the following text:").
 3. **Generate** – Sends the full prompt to the LLM and gets the simplified output.
 4. **Store** – Saves the result in `prompt_results` with `description`, `model_name`, etc.
 
 With `--strategy all`, each item is processed 3 times (once per strategy). Results are stored in `prompt_results` and can be evaluated with the same metrics (SARI, BLEU, etc.) as the baseline runs.
+
+## Evaluate RAG Results
+
+```bash
+# Run all metrics for RAG results only
+python -m app.experiments.evaluation.evaluate_run --description "step 2 - RAG top k=3"
+
+# Or run individual metrics
+python -m app.experiments.evaluation.sari.calculate_sari --description "step 2 - RAG top k=3"
+
+# Aggregate and compare (step 1 vs step 2 are kept separate)
+python -m app.experiments.analysis.aggregate_metrics --description "step 2 - RAG top k=3"
+```

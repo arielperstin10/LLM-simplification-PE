@@ -4,8 +4,13 @@ Provides multiple levels of aggregation:
 1. Overall by model (across all prompts)
 2. By model + strategy (per prompt strategy)
 3. Detailed per-item data
+
+Use --description to filter to a specific run (e.g. "step 2 - RAG top k=3").
+When omitted, aggregates all results; description is included in grouping so
+step 1 and step 2 are kept separate.
 """
 
+import argparse
 import sys
 from pathlib import Path
 from sqlalchemy import func
@@ -20,7 +25,7 @@ from app.models.evaluation import Evaluation
 from app.models.prompt import PromptResult, PromptVersion, Prompt
 
 
-def aggregate_overall_by_model():
+def aggregate_overall_by_model(description=None):
     """
     Aggregate metrics overall by model (ignoring prompt strategy).
     Returns DataFrame with mean, std, min, max, count for each metric.
@@ -28,9 +33,10 @@ def aggregate_overall_by_model():
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             PromptResult.model_name,
             PromptVersion.version,
+            PromptResult.description,
             # Quality metrics (higher is better)
             func.avg(Evaluation.bertscore_f1).label('avg_bertscore'),
             func.stddev(Evaluation.bertscore_f1).label('std_bertscore'),
@@ -76,18 +82,24 @@ def aggregate_overall_by_model():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
-        ).group_by(
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.group_by(
             PromptResult.model_name,
-            PromptVersion.version
+            PromptVersion.version,
+            PromptResult.description
         ).order_by(
             PromptResult.model_name,
-            PromptVersion.version
+            PromptVersion.version,
+            PromptResult.description
         ).all()
         
         # Convert to DataFrame
         df = pd.DataFrame([{
             'model': r.model_name,
             'version': r.version,
+            'description': r.description,
             'count': r.count,
             # BERTScore
             'bertscore_mean': float(r.avg_bertscore) if r.avg_bertscore else None,
@@ -130,7 +142,7 @@ def aggregate_overall_by_model():
         db.close()
 
 
-def aggregate_by_model_and_strategy():
+def aggregate_by_model_and_strategy(description=None):
     """
     Aggregate metrics by model and prompt strategy.
     Returns DataFrame with metrics grouped by model + strategy_type.
@@ -138,9 +150,10 @@ def aggregate_by_model_and_strategy():
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             PromptResult.model_name,
             PromptVersion.version,
+            PromptResult.description,
             Prompt.strategy_type,
             # Quality metrics
             func.avg(Evaluation.bertscore_f1).label('avg_bertscore'),
@@ -170,13 +183,18 @@ def aggregate_by_model_and_strategy():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
-        ).group_by(
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.group_by(
             PromptResult.model_name,
             PromptVersion.version,
+            PromptResult.description,
             Prompt.strategy_type
         ).order_by(
             PromptResult.model_name,
             PromptVersion.version,
+            PromptResult.description,
             Prompt.strategy_type
         ).all()
         
@@ -184,6 +202,7 @@ def aggregate_by_model_and_strategy():
         df = pd.DataFrame([{
             'model': r.model_name,
             'version': r.version,
+            'description': r.description,
             'strategy': r.strategy_type,
             'count': r.count,
             # BERTScore
@@ -215,7 +234,7 @@ def aggregate_by_model_and_strategy():
         db.close()
 
 
-def get_detailed_results():
+def get_detailed_results(description=None):
     """
     Get detailed per-item results for deep analysis.
     Returns DataFrame with all metrics for each individual result.
@@ -223,9 +242,10 @@ def get_detailed_results():
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             PromptResult.model_name,
             PromptVersion.version,
+            PromptResult.description,
             Prompt.strategy_type,
             PromptResult.item_id,
             Evaluation.result_id,
@@ -251,7 +271,10 @@ def get_detailed_results():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
-        ).order_by(
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.order_by(
             PromptResult.model_name,
             PromptVersion.version,
             Prompt.strategy_type
@@ -261,6 +284,7 @@ def get_detailed_results():
         df = pd.DataFrame([{
             'model': r.model_name,
             'version': r.version,
+            'description': r.description,
             'strategy': r.strategy_type,
             'item_id': str(r.item_id),
             'result_id': str(r.result_id),
@@ -285,7 +309,7 @@ def get_detailed_results():
         db.close()
 
 
-def aggregate_by_prompt_version():
+def aggregate_by_prompt_version(description=None):
     """
     Aggregate metrics by prompt_version_id and model_name.
     Returns a dictionary where keys are prompt_version_id (as string) and values are DataFrames
@@ -295,9 +319,10 @@ def aggregate_by_prompt_version():
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             Evaluation.prompt_version_id,
             PromptResult.model_name,
+            PromptResult.description,
             Prompt.strategy_type,
             PromptVersion.version,
             # Quality metrics
@@ -333,9 +358,13 @@ def aggregate_by_prompt_version():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
-        ).group_by(
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.group_by(
             Evaluation.prompt_version_id,
             PromptResult.model_name,
+            PromptResult.description,
             Prompt.strategy_type,
             PromptVersion.version
         ).all()
@@ -350,11 +379,13 @@ def aggregate_by_prompt_version():
                 tables_by_prompt_version[prompt_version_id_str] = {
                     'strategy_type': r.strategy_type,
                     'version': r.version,
+                    'description': r.description,
                     'data': []
                 }
             
             tables_by_prompt_version[prompt_version_id_str]['data'].append({
                 'model': r.model_name,
+                'description': r.description,
                 'count': r.count,
                 # Quality metrics
                 'BERTScore': float(r.bertscore_mean) if r.bertscore_mean else None,
@@ -389,7 +420,8 @@ def aggregate_by_prompt_version():
             result_dict[prompt_version_id] = {
                 'dataframe': df,
                 'strategy_type': info['strategy_type'],
-                'version': info['version']
+                'version': info['version'],
+                'description': info.get('description')
             }
         
         return result_dict
@@ -405,7 +437,8 @@ def print_summary_table(df_overall):
     print("="*100)
     
     for _, row in df_overall.iterrows():
-        print(f"\n{row['model'].upper()} ({row['version']}):")
+        desc = f" [{row['description']}]" if row.get('description') else ""
+        print(f"\n{row['model'].upper()} ({row['version']}){desc}:")
         print(f"  Samples: {row['count']}")
         print(f"\n  Quality Metrics (higher is better):")
         print(f"    BERTScore: {row['bertscore_mean']:.4f} ± {row['bertscore_std']:.4f} "
@@ -434,7 +467,8 @@ def print_strategy_table(df_by_strategy):
 
     current_group = None
     for _, row in df_by_strategy.iterrows():
-        group = f"{row['model'].upper()} ({row['version']})"
+        desc = f" [{row.get('description')}]" if row.get('description') else ""
+        group = f"{row['model'].upper()} ({row['version']}){desc}"
         if group != current_group:
             print(f"\n{'─'*100}")
             print(f"  {group}")
@@ -483,11 +517,14 @@ def print_tables_by_prompt_version(tables_dict):
         df = info['dataframe']
         strategy = info['strategy_type']
         version = info['version']
+        desc = info.get('description')
         
         print(f"\n{'='*120}")
         print(f"Prompt Version ID: {prompt_version_id}")
         print(f"Strategy Type: {strategy}")
         print(f"Version: {version}")
+        if desc:
+            print(f"Description: {desc}")
         print(f"{'='*120}\n")
         
         # Display the table
@@ -496,9 +533,21 @@ def print_tables_by_prompt_version(tables_dict):
         print(f"{'='*120}\n")
 
 
+def _description_to_slug(description):
+    """Convert description to filename-safe slug."""
+    if description == "step 1 - simple prompt engineering":
+        return "step1"
+    if description == "step 2 - RAG top k=3":
+        return "step2"
+    if description:
+        return description.replace(" ", "_").replace("-", "_").lower()[:30]
+    return "all"
+
+
 def export_tables_by_prompt_version(tables_dict, output_dir=None):
     """
     Export tables grouped by prompt_version_id to CSV files.
+    Filename format: {step_slug}_{strategy}_v{version}.csv (e.g. step1_zeroshot_v1.csv)
     
     Args:
         tables_dict: Dictionary returned by aggregate_by_prompt_version()
@@ -519,11 +568,13 @@ def export_tables_by_prompt_version(tables_dict, output_dir=None):
         df = info['dataframe']
         strategy = info['strategy_type']
         version = info['version']
+        description = info.get('description')
+        slug = _description_to_slug(description)
         
-        # Create filename with strategy and version info
+        # Create filename: step1_zeroshot_v1.csv or step2_zeroshot_v2.csv
         safe_strategy = strategy.replace(" ", "_").lower()
         safe_version = version.replace(" ", "_").lower() if version else "unknown"
-        filename = f"prompt_version_{prompt_version_id[:8]}_{safe_strategy}_v{safe_version}.csv"
+        filename = f"{slug}_{safe_strategy}_v{safe_version}.csv"
         
         filepath = output_dir / filename
         df.to_csv(filepath, index=True)  # index=True to include model names
@@ -533,7 +584,7 @@ def export_tables_by_prompt_version(tables_dict, output_dir=None):
     return exported_files
 
 
-def generate_results_by_prompt_version(print_tables=True, export_csv=True):
+def generate_results_by_prompt_version(description=None, print_tables=True, export_csv=True):
     """
     Generate and optionally display/export results tables grouped by prompt_version_id.
     
@@ -545,7 +596,7 @@ def generate_results_by_prompt_version(print_tables=True, export_csv=True):
         Dictionary of tables by prompt_version_id
     """
     print("\nGenerating results tables by prompt_version_id...")
-    tables_dict = aggregate_by_prompt_version()
+    tables_dict = aggregate_by_prompt_version(description=description)
     
     if not tables_dict:
         print("⚠ No data found for prompt version aggregation")
@@ -565,11 +616,17 @@ def generate_results_by_prompt_version(print_tables=True, export_csv=True):
 
 def main():
     """Main function to run all aggregations and exports."""
+    parser = argparse.ArgumentParser(description="Aggregate evaluation metrics")
+    parser.add_argument("--description", type=str, default=None, help="Only aggregate results with this description")
+    args = parser.parse_args()
+    
     print("Starting metric aggregation...")
+    if args.description:
+        print(f"Filtering by description: {args.description}")
     
     # 1. Overall aggregation by model
     print("\n1. Aggregating overall metrics by model...")
-    df_overall = aggregate_overall_by_model()
+    df_overall = aggregate_overall_by_model(description=args.description)
     if not df_overall.empty:
         print_summary_table(df_overall)
         export_to_csv(df_overall, "model_comparison_overall.csv")
@@ -578,7 +635,7 @@ def main():
     
     # 2. Aggregation by model + version + strategy
     print("\n2. Aggregating metrics by model, version, and strategy...")
-    df_by_strategy = aggregate_by_model_and_strategy()
+    df_by_strategy = aggregate_by_model_and_strategy(description=args.description)
     if not df_by_strategy.empty:
         print_strategy_table(df_by_strategy)
         export_to_csv(df_by_strategy, "model_comparison_by_strategy.csv")
@@ -587,7 +644,7 @@ def main():
     
     # 3. Detailed per-item results
     print("\n3. Extracting detailed per-item results...")
-    df_detailed = get_detailed_results()
+    df_detailed = get_detailed_results(description=args.description)
     if not df_detailed.empty:
         print(f"✓ Found {len(df_detailed)} individual results")
         export_to_csv(df_detailed, "model_comparison_detailed.csv")

@@ -2,6 +2,7 @@
 Calculate BERTScore for PromptResults and store in Evaluation table.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -19,11 +20,11 @@ from app.models.evaluation import Evaluation
 hf_logging.set_verbosity_error()
 
 
-def calculate_bertscore():
+def calculate_bertscore(description=None):
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             PromptResult.result_id,
             PromptResult.prompt_version_id,
             PromptResult.output_text,
@@ -33,7 +34,10 @@ def calculate_bertscore():
         ).filter(
             PromptResult.output_text.isnot(None),
             DatasetItem.text_ele.isnot(None)
-        ).all()
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.all()
         
         # Calculate BERTScore for each individual PromptResult
         processed = 0
@@ -89,4 +93,7 @@ def calculate_bertscore():
 
 
 if __name__ == "__main__":
-    calculate_bertscore()
+    parser = argparse.ArgumentParser(description="Calculate BERTScore for PromptResults")
+    parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    args = parser.parse_args()
+    calculate_bertscore(description=args.description)

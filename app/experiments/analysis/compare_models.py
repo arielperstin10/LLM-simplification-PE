@@ -3,6 +3,7 @@ Statistical comparison between models.
 Performs t-tests, Mann-Whitney U tests, and calculates effect sizes.
 """
 
+import argparse
 import sys
 from pathlib import Path
 import pandas as pd
@@ -17,14 +18,15 @@ from app.models.evaluation import Evaluation
 from app.models.prompt import PromptResult, PromptVersion, Prompt
 
 
-def get_detailed_results():
+def get_detailed_results(description=None):
     """Get detailed per-item results for statistical testing."""
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             PromptResult.model_name,
             PromptVersion.version,
+            PromptResult.description,
             Prompt.strategy_type,
             Evaluation.bertscore_f1,
             Evaluation.bleu,
@@ -43,12 +45,16 @@ def get_detailed_results():
         ).filter(
             PromptResult.model_name.isnot(None),
             Evaluation.bertscore_f1.isnot(None)
-        ).all()
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.all()
         
         df = pd.DataFrame([{
             'model': r.model_name,
             'version': r.version,
-            'model_version': f"{r.model_name} ({r.version})",
+            'description': r.description,
+            'model_version': f"{r.model_name} ({r.version})" + (f" [{r.description}]" if r.description else ""),
             'strategy': r.strategy_type,
             'bertscore': float(r.bertscore_f1) if r.bertscore_f1 else None,
             'bleu': float(r.bleu) if r.bleu else None,
@@ -220,11 +226,17 @@ def export_comparison(df, filename, output_dir=None):
 
 def main():
     """Main function to run statistical comparisons."""
+    parser = argparse.ArgumentParser(description="Statistical comparison between models")
+    parser.add_argument("--description", type=str, default=None, help="Only compare results with this description")
+    args = parser.parse_args()
+    
     print("Starting statistical comparison...")
+    if args.description:
+        print(f"Filtering by description: {args.description}")
     
     # Get detailed data
     print("\n1. Loading detailed results from database...")
-    df = get_detailed_results()
+    df = get_detailed_results(description=args.description)
     print(f"✓ Loaded {len(df)} results")
     
     # Show available model+version combinations
