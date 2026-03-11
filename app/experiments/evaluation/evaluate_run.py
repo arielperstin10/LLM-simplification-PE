@@ -21,12 +21,13 @@ METRICS = [
     "app.experiments.evaluation.fkgl.calculate_fkgl",
     "app.experiments.evaluation.fre.calculate_fre",
     "app.experiments.evaluation.perplexity.calculate_perplexity",
+    "app.experiments.evaluation.lens.calculate_lens",
 ]
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run all evaluation metrics (SARI, BLEU, BERTScore, FKGL, FRE, Perplexity)"
+        description="Run all evaluation metrics (SARI, BLEU, BERTScore, FKGL, FRE, Perplexity, LENS)"
     )
     parser.add_argument(
         "--description",

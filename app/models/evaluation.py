@@ -24,6 +24,7 @@ class Evaluation(Base):
     fre_delta = Column(Float, nullable=True)
     entity_additions_rate = Column(Float, nullable=True)
     number_mismatch_rate = Column(Float, nullable=True)
+    lens = Column(Float, nullable=True)
 
     # Relationships
     prompt_version = relationship("PromptVersion", back_populates="evaluations")
