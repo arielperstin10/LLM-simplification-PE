@@ -13,6 +13,7 @@ easse @ git+https://github.com/feralvam/easse.git
 bert-score
 textstat
 nltk
+lens-metric
 
 # Analysis/Visualization (used in app/experiments/analysis/)
 pandas
