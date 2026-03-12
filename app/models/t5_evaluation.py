@@ -22,4 +22,5 @@ class T5LargeTextSimplificationEvaluation(Base):
     fre_delta = Column(Float, nullable=True)
     bleu = Column(Float, nullable=True)
     perplexity = Column(Float, nullable=True)
+    lens = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())

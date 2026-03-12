@@ -24,6 +24,7 @@ from app.experiments.analysis.aggregate_metrics import (
 # Default descriptions for step 1 and step 2
 STEP1_DESCRIPTION = "step 1 - simple prompt engineering"
 STEP2_DESCRIPTION = "step 2 - RAG top k=3"  # Best versions: zeroshot v2, structured v2, constraint v1
+STEP2_UPGR_DESCRIPTION = "step 2 - RAG top k=3 with upgrated prompt"  # vv3 upgraded-prompt variants
 
 
 def main():
@@ -47,7 +48,7 @@ def main():
     if args.description:
         descriptions = [args.description]
     else:
-        descriptions = [STEP1_DESCRIPTION, STEP2_DESCRIPTION]
+        descriptions = [STEP1_DESCRIPTION, STEP2_DESCRIPTION, STEP2_UPGR_DESCRIPTION]
 
     print("="*120)
     print("EVALUATION RESULTS BY PROMPT VERSION")

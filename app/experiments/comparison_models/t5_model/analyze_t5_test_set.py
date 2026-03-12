@@ -65,6 +65,7 @@ def aggregate_t5_test_set_metrics():
             "fre_delta": safe_values("fre_delta"),
             "fkgl_output": safe_values("fkgl_output"),
             "fre_output": safe_values("fre_output"),
+            "lens": safe_values("lens"),
         }
 
         # Build row matching prompt_versions CSV format
@@ -96,6 +97,8 @@ def aggregate_t5_test_set_metrics():
             "FRE_Output_std": mean_std(metrics["fre_output"])[1],
             "Entity_Additions_Rate": "",
             "Number_Mismatch_Rate": "",
+            "LENS": mean_std(metrics["lens"])[0],
+            "LENS_std": mean_std(metrics["lens"])[1],
         }
 
         return pd.DataFrame([row])

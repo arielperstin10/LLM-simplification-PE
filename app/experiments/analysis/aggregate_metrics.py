@@ -347,6 +347,9 @@ def aggregate_by_prompt_version(description=None):
             # Additional metrics
             func.avg(Evaluation.entity_additions_rate).label('entity_additions_rate_mean'),
             func.avg(Evaluation.number_mismatch_rate).label('number_mismatch_rate_mean'),
+            # LENS
+            func.avg(Evaluation.lens).label('lens_mean'),
+            func.stddev(Evaluation.lens).label('lens_std'),
             # Count
             func.count(Evaluation.evaluation_id).label('count')
         ).join(
@@ -409,6 +412,9 @@ def aggregate_by_prompt_version(description=None):
                 # Additional metrics
                 'Entity_Additions_Rate': float(r.entity_additions_rate_mean) if r.entity_additions_rate_mean else None,
                 'Number_Mismatch_Rate': float(r.number_mismatch_rate_mean) if r.number_mismatch_rate_mean else None,
+                # LENS
+                'LENS': float(r.lens_mean) if r.lens_mean else None,
+                'LENS_std': float(r.lens_std) if r.lens_std else None,
             })
         
         # Convert each group to a DataFrame
