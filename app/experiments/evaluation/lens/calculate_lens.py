@@ -1,5 +1,6 @@
 """
-Calculate FKGL (Flesch-Kincaid Grade Level) for PromptResults and store in Evaluation table.
+LENS (Learnable Evaluation Metric for Text Simplification) is a reference-based
+metric that correlates better with human judgment than SARI or BERTScore.
 """
 
 import argparse
@@ -9,16 +10,34 @@ from pathlib import Path
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-import textstat
+import torch
+
+# The LENS checkpoint was saved on CUDA. Patch torch.load to force CPU
+# loading since lens-metric doesn't expose a map_location parameter.
+_orig_torch_load = torch.load
+def _cpu_torch_load(f, *args, **kwargs):
+    kwargs["map_location"] = torch.device("cpu")  # force CPU — pytorch_lightning passes map_location=None explicitly
+    return _orig_torch_load(f, *args, **kwargs)
+torch.load = _cpu_torch_load
+
+from lens import LENS, download_model
 from app.db.session import SessionLocal
 from app.models.prompt import PromptResult
 from app.models.dataset import DatasetItem
 from app.models.evaluation import Evaluation
 
 
-def calculate_fkgl(description=None):
+LENS_MODEL_ID = "davidheineman/lens"
+
+
+def calculate_lens_scores(description=None):
     db = SessionLocal()
-    
+
+    # Download/load the LENS model checkpoint from HuggingFace (cached after first run)
+    # rescale=True gives scores in 0-100 range for better interpretability
+    model_path = download_model(LENS_MODEL_ID)
+    lens_metric = LENS(model_path, rescale=True)
+
     try:
         # Get all PromptResults with their corresponding DatasetItems
         query = db.query(
@@ -31,70 +50,56 @@ def calculate_fkgl(description=None):
             DatasetItem, PromptResult.item_id == DatasetItem.item_id
         ).filter(
             PromptResult.output_text.isnot(None),
-            PromptResult.input_text.isnot(None)
+            DatasetItem.text_ele.isnot(None)
         )
         if description is not None:
             query = query.filter(PromptResult.description == description)
         results = query.all()
-        
-        # Calculate FKGL for each individual PromptResult
+
         processed = 0
-        
+
         for result_id, prompt_version_id, input_text, output_text, text_ele in results:
             processed += 1
-            
+
             if processed % 10 == 0:
                 print(f"Processing {processed}/{len(results)}...")
-            
-            fkgl_input = None
-            fkgl_output = None
-            delta_fkgl = None
-            
-            # Calculate FKGL for input text
+
+            lens_score = None
+
             try:
-                fkgl_input = textstat.flesch_kincaid_grade(input_text)
-            except Exception as e:
+                # LENS score() takes: complex, simplified, references (list of lists)
+                # Returns a plain list of scores (not a tuple)
+                scores = lens_metric.score(
+                    complex=[input_text],
+                    simplified=[output_text],
+                    references=[[text_ele]],
+                    batch_size=1,
+                    devices=[]
+                )
+                lens_score = float(scores[0])
+            except Exception:
                 import traceback
                 traceback.print_exc()
-            
-            # Calculate FKGL for output text
-            try:
-                fkgl_output = textstat.flesch_kincaid_grade(output_text)
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-            
-            # Calculate FKGL delta (output FKGL - input FKGL)
-            # Negative delta means the output is simpler (lower grade level) than input
-            if fkgl_input is not None and fkgl_output is not None:
-                delta_fkgl = fkgl_output - fkgl_input
-            
-            # Check if Evaluation already exists for this result_id
+
+            # Upsert into Evaluation table
             existing_eval = db.query(Evaluation).filter(
                 Evaluation.result_id == result_id
             ).first()
-            
+
             if existing_eval:
-                # Update existing evaluation
-                existing_eval.fkgl_input = fkgl_input
-                existing_eval.fkgl_output = fkgl_output
-                existing_eval.delta_fkgl = delta_fkgl
+                existing_eval.lens = lens_score
             else:
-                # Create new evaluation
                 evaluation = Evaluation(
                     prompt_version_id=prompt_version_id,
                     result_id=result_id,
-                    fkgl_input=fkgl_input,
-                    fkgl_output=fkgl_output,
-                    delta_fkgl=delta_fkgl
+                    lens=lens_score
                 )
                 db.add(evaluation)
-        
-        # Commit all changes
+
         db.commit()
-        print(f"\n✓ Successfully calculated and stored FKGL scores:")
+        print(f"\n✓ Successfully calculated and stored LENS scores:")
         print(f"  - Processed: {processed} results")
-        
+
     except Exception as e:
         db.rollback()
         print(f"Error occurred: {e}")
@@ -106,8 +111,7 @@ def calculate_fkgl(description=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Calculate FKGL for PromptResults")
+    parser = argparse.ArgumentParser(description="Calculate LENS scores for PromptResults")
     parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
     args = parser.parse_args()
-    calculate_fkgl(description=args.description)
-
+    calculate_lens_scores(description=args.description)

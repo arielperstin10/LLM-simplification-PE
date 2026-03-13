@@ -3,6 +3,7 @@ Calculate BLEU score for PromptResults and store in Evaluation table.
 BLEU compares the model's output_text to the reference text_ele.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -16,11 +17,11 @@ from app.models.dataset import DatasetItem
 from app.models.evaluation import Evaluation
 
 
-def calculate_bleu():
+def calculate_bleu(description=None):
     db = SessionLocal()
     
     try:
-        results = db.query(
+        query = db.query(
             PromptResult.result_id,
             PromptResult.prompt_version_id,
             PromptResult.output_text,
@@ -30,7 +31,10 @@ def calculate_bleu():
         ).filter(
             PromptResult.output_text.isnot(None),
             DatasetItem.text_ele.isnot(None)
-        ).all()
+        )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        results = query.all()
         
         # Calculate BLEU for each individual PromptResult
         processed = 0
@@ -92,5 +96,8 @@ def calculate_bleu():
 
 
 if __name__ == "__main__":
-    calculate_bleu()
+    parser = argparse.ArgumentParser(description="Calculate BLEU scores for PromptResults")
+    parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    args = parser.parse_args()
+    calculate_bleu(description=args.description)
 
