@@ -141,3 +141,69 @@ class DatasetItemEmbeddingE5TestSet(Base):
     )
 
     dataset_item = relationship("DatasetItem", backref="embedding_e5_test_set")
+
+
+class DatasetItemEmbeddingBGE(Base):
+    """
+    ORM model for public.dataset_item_embeddings_bge_768.
+
+    Stores 768-dimensional BGE embeddings (BAAI/bge-base-en-v1.5) for train items.
+    """
+
+    __tablename__ = "dataset_item_embeddings_bge_768"
+    __table_args__ = {"schema": "public"}
+
+    embedding_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.item_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    text_adv = Column(String, nullable=False)
+    embedding = Column(Vector(768), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    dataset_item = relationship("DatasetItem", backref="embedding_bge")
+
+
+class DatasetItemEmbeddingBGETestSet(Base):
+    """
+    ORM model for public.dataset_item_embeddings_bge_768_test_set.
+
+    Stores 768-dimensional BGE embeddings (BAAI/bge-base-en-v1.5) for test-set items.
+    """
+
+    __tablename__ = "dataset_item_embeddings_bge_768_test_set"
+    __table_args__ = {"schema": "public"}
+
+    embedding_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.item_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    text_adv = Column(String, nullable=False)
+    embedding = Column(Vector(768), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    dataset_item = relationship("DatasetItem", backref="embedding_bge_test_set")
