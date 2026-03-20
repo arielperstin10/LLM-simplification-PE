@@ -6,6 +6,8 @@ from app.models.embedding import (
     DatasetItemEmbeddingOpenAITestSet,
     DatasetItemEmbeddingE5,
     DatasetItemEmbeddingE5TestSet,
+    DatasetItemEmbeddingBGE,
+    DatasetItemEmbeddingBGETestSet,
 )
 from app.models.t5_evaluation import T5LargeTextSimplificationEvaluation
 
@@ -19,6 +21,8 @@ __all__ = [
     "DatasetItemEmbeddingOpenAITestSet",
     "DatasetItemEmbeddingE5",
     "DatasetItemEmbeddingE5TestSet",
+    "DatasetItemEmbeddingBGE",
+    "DatasetItemEmbeddingBGETestSet",
     "T5LargeTextSimplificationEvaluation",
 ]
 
