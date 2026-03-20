@@ -9,24 +9,15 @@ from pgvector.sqlalchemy import Vector
 from app.db.base import Base
 
 
-class DatasetItemEmbedding1536(Base):
+class DatasetItemEmbeddingOpenAI(Base):
     """
-    ORM model for public.dataset_item_embeddings_1536.
+    ORM model for public.dataset_item_embeddings_openai_1536.
 
     Stores 1536-dimensional OpenAI embeddings (text-embedding-3-small)
     for each dataset item, used by the RAG pipeline.
-
-    DDL:
-        CREATE TABLE public.dataset_item_embeddings_1536 (
-            embedding_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-            item_id      uuid UNIQUE NOT NULL REFERENCES dataset_items(item_id) ON DELETE CASCADE,
-            text_adv     text NOT NULL,
-            embedding    vector(1536) NOT NULL,
-            created_at   timestamptz NOT NULL DEFAULT now()
-        );
     """
 
-    __tablename__ = "dataset_item_embeddings_1536"
+    __tablename__ = "dataset_item_embeddings_openai_1536"
     __table_args__ = {"schema": "public"}
 
     embedding_id = Column(
@@ -50,27 +41,17 @@ class DatasetItemEmbedding1536(Base):
     )
 
     # Relationship back to the source item
-    dataset_item = relationship("DatasetItem", backref="embedding_1536")
+    dataset_item = relationship("DatasetItem", backref="embedding_openai")
 
 
-class DatasetItemEmbedding1536TestSet(Base):
+class DatasetItemEmbeddingOpenAITestSet(Base):
     """
-    ORM model for public.dataset_item_embeddings_1536_test_set.
+    ORM model for public.dataset_item_embeddings_openai_1536_test_set.
 
-    Stores 1536-dimensional OpenAI embeddings for the 40 test-set items
-    (the complement of the RAG/train split).
-
-    DDL:
-        CREATE TABLE public.dataset_item_embeddings_1536_test_set (
-            embedding_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-            item_id      uuid UNIQUE NOT NULL REFERENCES dataset_items(item_id) ON DELETE CASCADE,
-            text_adv     text NOT NULL,
-            embedding    vector(1536) NOT NULL,
-            created_at   timestamptz NOT NULL DEFAULT now()
-        );
+    Stores 1536-dimensional OpenAI embeddings for the 40 test-set items.
     """
 
-    __tablename__ = "dataset_item_embeddings_1536_test_set"
+    __tablename__ = "dataset_item_embeddings_openai_1536_test_set"
     __table_args__ = {"schema": "public"}
 
     embedding_id = Column(
@@ -93,4 +74,70 @@ class DatasetItemEmbedding1536TestSet(Base):
         default=datetime.utcnow,
     )
 
-    dataset_item = relationship("DatasetItem", backref="embedding_1536_test_set")
+    dataset_item = relationship("DatasetItem", backref="embedding_openai_test_set")
+
+
+class DatasetItemEmbeddingE5(Base):
+    """
+    ORM model for public.dataset_item_embeddings_e5_768.
+
+    Stores 768-dimensional E5 embeddings for each dataset item.
+    """
+
+    __tablename__ = "dataset_item_embeddings_e5_768"
+    __table_args__ = {"schema": "public"}
+
+    embedding_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.item_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    text_adv = Column(String, nullable=False)
+    embedding = Column(Vector(768), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    dataset_item = relationship("DatasetItem", backref="embedding_e5")
+
+
+class DatasetItemEmbeddingE5TestSet(Base):
+    """
+    ORM model for public.dataset_item_embeddings_e5_768_test_set.
+
+    Stores 768-dimensional E5 embeddings for the test-set items.
+    """
+
+    __tablename__ = "dataset_item_embeddings_e5_768_test_set"
+    __table_args__ = {"schema": "public"}
+
+    embedding_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    item_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.item_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    text_adv = Column(String, nullable=False)
+    embedding = Column(Vector(768), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    dataset_item = relationship("DatasetItem", backref="embedding_e5_test_set")

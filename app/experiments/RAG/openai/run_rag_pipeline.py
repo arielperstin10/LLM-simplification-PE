@@ -16,8 +16,8 @@ from typing import List, Optional, Tuple
 
 from app.db.session import SessionLocal
 from app.models.prompt import Prompt, PromptVersion, PromptResult
-from app.experiments.RAG.build_embedding_index_test_set import get_test_items
-from app.experiments.RAG.retrieval import retrieve_top_k
+from app.experiments.RAG.openai.build_embedding_index_test_set import get_test_items
+from app.experiments.RAG.openai.retrieval import retrieve_top_k
 from app.experiments.llm_comparison.model_registry import call_llm, get_model_display_name, MODEL_CONFIG
 
 RAG_EXAMPLES_HEADER = "Here are some similar examples to the following text:"

@@ -1,13 +1,16 @@
 """
-build_embedding_index.py
-------------------------
-Backfills public.dataset_item_embeddings_1536 with OpenAI embeddings
-for the TRAIN split of dataset_items (all items except the 40 test items
-selected with random.seed(42)).
+build_embedding_index_test_set.py
+---------------------------------
+Backfills public.dataset_item_embeddings_openai_1536_test_set with OpenAI embeddings
+for the TEST split of dataset_items (the 40 items selected with random.seed(42)).
+
+Mirrors the exact split logic used in build_embedding_index.py and other runners:
+  - 149 items → RAG set (dataset_item_embeddings_openai_1536)
+  - 40 items  → test set (dataset_item_embeddings_openai_1536_test_set)
 
 Usage:
-    python -m app.experiments.rag.build_embedding_index          # skip already-embedded items
-    python -m app.experiments.rag.build_embedding_index --force  # recompute all embeddings
+    python -m app.experiments.RAG.openai.build_embedding_index_test_set          # skip already-embedded items
+    python -m app.experiments.RAG.openai.build_embedding_index_test_set --force  # recompute all embeddings
 """
 
 import argparse
@@ -24,13 +27,13 @@ from app.db.session import SessionLocal
 from app.models.dataset import DatasetItem
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants (must match build_embedding_index.py)
 # ---------------------------------------------------------------------------
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
 BATCH_SIZE = 20
 MAX_RETRIES = 3
-BACKOFF_BASE = 2.0   # seconds; retry waits 2, 4, 8 s
+BACKOFF_BASE = 2.0
 TEST_SAMPLE_SIZE = 40
 RANDOM_SEED = 42
 
@@ -50,15 +53,15 @@ openai_client = OpenAI(api_key=_api_key)
 # Core functions
 # ---------------------------------------------------------------------------
 
-def get_train_items(db) -> List[Tuple[uuid.UUID, str]]:
+def get_test_items(db) -> List[Tuple[uuid.UUID, str]]:
     """
-    Returns the TRAIN split as a list of (item_id, text_adv) tuples.
+    Returns the TEST split as a list of (item_id, text_adv) tuples.
 
-    Mirrors the exact logic used in the existing runners:
+    Mirrors the exact logic used in build_embedding_index.py:
       1. Query all items with non-null text_adv using .all() (no ORDER BY).
       2. Set random.seed(42).
       3. Select 40 test items via random.sample.
-      4. Train items are everything else.
+      4. Return those 40 (train items are the complement).
     """
     all_items: List[Tuple[uuid.UUID, str]] = (
         db.query(DatasetItem.item_id, DatasetItem.text_adv)
@@ -67,12 +70,12 @@ def get_train_items(db) -> List[Tuple[uuid.UUID, str]]:
     )
 
     random.seed(RANDOM_SEED)
-    test_items = set(
-        item[0] for item in random.sample(all_items, min(TEST_SAMPLE_SIZE, len(all_items)))
+    test_item_ids = set(
+        item[0] for item in random.sample(
+            all_items, min(TEST_SAMPLE_SIZE, len(all_items))
+        )
     )
-
-    train_items = [item for item in all_items if item[0] not in test_items]
-    return train_items
+    return [item for item in all_items if item[0] in test_item_ids]
 
 
 def embed_text_adv(text_adv: str) -> List[float]:
@@ -113,15 +116,13 @@ def upsert_embedding(
     embedding: List[float],
 ) -> None:
     """
-    Upserts a single embedding row into public.dataset_item_embeddings_1536.
-    The embedding list is converted to the '[f1,f2,...]' string that pgvector accepts.
+    Upserts a single embedding row into public.dataset_item_embeddings_openai_1536_test_set.
     Does NOT commit — caller is responsible for batched commits.
     """
-    # pgvector accepts a string representation of the vector
     embedding_str = "[" + ",".join(str(f) for f in embedding) + "]"
 
     sql = text("""
-        INSERT INTO public.dataset_item_embeddings_1536 (item_id, text_adv, embedding)
+        INSERT INTO public.dataset_item_embeddings_openai_1536_test_set (item_id, text_adv, embedding)
         VALUES (:item_id, :text_adv, :embedding)
         ON CONFLICT (item_id) DO UPDATE SET
             text_adv  = EXCLUDED.text_adv,
@@ -136,44 +137,44 @@ def upsert_embedding(
 
 
 def _already_embedded_ids(db) -> set:
-    """Returns the set of item_ids already present in the embeddings table."""
+    """Returns the set of item_ids already present in the test-set embeddings table."""
     rows = db.execute(
-        text("SELECT item_id FROM public.dataset_item_embeddings_1536")
+        text("SELECT item_id FROM public.dataset_item_embeddings_openai_1536_test_set")
     ).fetchall()
     return {str(row[0]) for row in rows}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Backfill public.dataset_item_embeddings_1536 with OpenAI embeddings."
+        description="Backfill public.dataset_item_embeddings_openai_1536_test_set with OpenAI embeddings."
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Re-embed items that are already in the embeddings table.",
+        help="Re-embed items that are already in the test-set embeddings table.",
     )
     args = parser.parse_args()
 
     db = SessionLocal()
     try:
         # ------------------------------------------------------------------ #
-        # 1. Determine train items
+        # 1. Determine test items
         # ------------------------------------------------------------------ #
-        train_items = get_train_items(db)
-        total = len(train_items)
+        test_items = get_test_items(db)
+        total = len(test_items)
         print(f"\n{'='*60}")
-        print(f"Total train items: {total}")
+        print(f"Total test items: {total}")
 
         # ------------------------------------------------------------------ #
         # 2. Optionally skip already-embedded items
         # ------------------------------------------------------------------ #
         if args.force:
-            items_to_process = train_items
+            items_to_process = test_items
             print("--force flag set: recomputing all embeddings.")
         else:
             existing_ids = _already_embedded_ids(db)
             items_to_process = [
-                item for item in train_items if str(item[0]) not in existing_ids
+                item for item in test_items if str(item[0]) not in existing_ids
             ]
             skipped_count = total - len(items_to_process)
             print(f"Already embedded: {skipped_count} items (skipping).")
@@ -212,25 +213,22 @@ def main() -> None:
         # 4. Validation summary
         # ------------------------------------------------------------------ #
         row_count = db.execute(
-            text("SELECT COUNT(*) FROM public.dataset_item_embeddings_1536")
+            text("SELECT COUNT(*) FROM public.dataset_item_embeddings_openai_1536_test_set")
         ).scalar()
 
-        # Check dimension of one stored embedding
-        sample_dim = None
-        sample_row = db.execute(
+        sample_dim = db.execute(
             text(
                 "SELECT array_length(embedding::real[], 1) "
-                "FROM public.dataset_item_embeddings_1536 LIMIT 1"
+                "FROM public.dataset_item_embeddings_openai_1536_test_set LIMIT 1"
             )
         ).scalar()
-        sample_dim = sample_row
 
         print("VALIDATION SUMMARY")
-        print(f"  Total train items:              {total}")
+        print(f"  Total test items:              {total}")
         print(f"  Inserted / updated:             {inserted}")
         print(f"  Skipped (already embedded):     {skipped}")
         print(f"  Failed:                         {failed}")
-        print(f"  Rows in embeddings table:       {row_count}")
+        print(f"  Rows in test-set table:         {row_count}")
         print(f"  Embedding dimension (sample):   {sample_dim}")
 
         if sample_dim and sample_dim != EMBEDDING_DIM:
