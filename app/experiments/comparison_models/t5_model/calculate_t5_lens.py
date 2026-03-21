@@ -9,8 +9,21 @@ Usage:
     python -m app.experiments.comparison_models.t5_model.calculate_t5_lens
 """
 
+import logging
+import os
 import sys
 from pathlib import Path
+
+# Suppress PyTorch Lightning verbose output BEFORE importing lens
+os.environ.setdefault("PYTORCH_LIGHTNING_LOG_LEVEL", "ERROR")
+os.environ.setdefault("PL_ENABLE_PROGRESS_BAR", "0")  # Disable "Predicting DataLoader" progress bars
+for logger_name in (
+    "lightning.pytorch.utilities.rank_zero",
+    "pytorch_lightning.utilities.rank_zero",
+    "lightning.pytorch",
+    "pytorch_lightning",
+):
+    logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
@@ -31,6 +44,7 @@ from app.experiments.RAG.build_embedding_index_test_set import get_test_items
 
 
 LENS_MODEL_ID = "davidheineman/lens"
+LENS_BATCH_SIZE = 32
 
 
 def calculate_t5_lens_scores():
@@ -58,31 +72,38 @@ def calculate_t5_lens_scores():
         )
         reference_map = {str(d.item_id): d.text_ele for d in dataset_items}
 
-        processed = 0
-        for row in rows:
-            processed += 1
-            if processed % 10 == 0:
-                print(f"Processing {processed}/{len(rows)}...")
+        # Filter to rows with valid data
+        valid_rows = [
+            row for row in rows
+            if reference_map.get(str(row.item_id)) and row.output_text and row.input_text
+        ]
 
-            reference = reference_map.get(str(row.item_id))
-            if not reference or not row.output_text or not row.input_text:
-                continue
+        for batch_start in range(0, len(valid_rows), LENS_BATCH_SIZE):
+            batch = valid_rows[batch_start : batch_start + LENS_BATCH_SIZE]
+            batch_end = batch_start + len(batch)
+            print(f"Processing {batch_start + 1}-{batch_end}/{len(valid_rows)}...")
+
+            complex_texts = [row.input_text for row in batch]
+            simplified_texts = [row.output_text for row in batch]
+            refs = [[reference_map[str(row.item_id)]] for row in batch]
 
             try:
                 scores = lens_metric.score(
-                    complex=[row.input_text],
-                    simplified=[row.output_text],
-                    references=[[reference]],
-                    batch_size=1,
+                    complex=complex_texts,
+                    simplified=simplified_texts,
+                    references=refs,
+                    batch_size=LENS_BATCH_SIZE,
                     devices=[],
                 )
-                row.lens = float(scores[0])
+                for i, row in enumerate(batch):
+                    if i < len(scores):
+                        row.lens = float(scores[i])
             except Exception:
                 import traceback
                 traceback.print_exc()
 
         db.commit()
-        print(f"\n✓ LENS scores stored for {processed} T5 rows.")
+        print(f"\n✓ LENS scores stored for {len(valid_rows)} T5 rows.")
 
     except Exception as e:
         db.rollback()

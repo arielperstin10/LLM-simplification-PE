@@ -34,20 +34,24 @@ MODEL_LABELS = {
 # ---------------------------------------------------------------------------
 # Phase definitions (ordered for evolution charts)
 # ---------------------------------------------------------------------------
-PHASE_ORDER = ["PE_v1", "PE_v2", "RAG_v2", "RAG_v3"]
+PHASE_ORDER = ["PE_v1", "PE_v2", "Open AI RAG v2", "Open AI RAG v3", "E5 RAG v3", "BGE RAG v3"]
 
 PHASE_LABELS = {
     "PE_v1":  "SE v1\n(Initial)",
     "PE_v2":  "SE v2\n(Improved)",
-    "RAG_v2": "RAG v2\n(Top-K=3)",
-    "RAG_v3": "RAG v3\n(Clean Output)",
+    "Open AI RAG v2": "Open AI RAG v2\n(Top-K=3)",
+    "Open AI RAG v3": "Open AI RAG v3\n(Clean Output)",
+    "E5 RAG v3": "E5 RAG v3\n(Clean Output)",
+    "BGE RAG v3": "BGE RAG v3\n(Clean Output)",
 }
 
-# DB description → phase key
+# DB description → phase key (must match PHASE_ORDER exactly)
 DESCRIPTION_TO_PHASE = {
     "step 1 - simple prompt engineering": None,       # split by version field
-    "step 2 - RAG top k=3":               "RAG_v2",
-    "step 2 - RAG top k=3 with upgrated prompt": "RAG_v3",
+    "step 2 - RAG top k=3":               "Open AI RAG v2",
+    "step 2 - RAG top k=3 with upgrated prompt": "Open AI RAG v3",
+    "E5-RAG-full":                        "E5 RAG v3",
+    "BGE-RAG-full":                       "BGE RAG v3",
 }
 
 # ---------------------------------------------------------------------------
