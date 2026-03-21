@@ -10,6 +10,7 @@ from app.models.embedding import (
     DatasetItemEmbeddingBGETestSet,
 )
 from app.models.t5_evaluation import T5LargeTextSimplificationEvaluation
+from app.models.apio_evaluation import APioTextSimplificationEvaluation
 
 __all__ = [
     "Prompt",
@@ -24,5 +25,6 @@ __all__ = [
     "DatasetItemEmbeddingBGE",
     "DatasetItemEmbeddingBGETestSet",
     "T5LargeTextSimplificationEvaluation",
+    "APioTextSimplificationEvaluation",
 ]
 
