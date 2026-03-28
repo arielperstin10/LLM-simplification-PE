@@ -1,12 +1,9 @@
 """
-Calculate LENS scores for T5 test-set results and store them in the
-t5_large_text_simplification_evaluation table.
-
-Mirrors app/experiments/evaluation/lens/calculate_lens.py but targets
-T5LargeTextSimplificationEvaluation instead of Evaluation.
+Calculate LENS scores for Plan-Simp test-set rows and store in
+plan_simp_text_simplification_evaluation.
 
 Usage:
-    python -m app.experiments.comparison_models.t5_model.calculate_t5_lens
+    python -m app.experiments.comparison_models.plan_simp.calculate_plan_simp_lens
 """
 
 import logging
@@ -14,9 +11,8 @@ import os
 import sys
 from pathlib import Path
 
-# Suppress PyTorch Lightning verbose output BEFORE importing lens
 os.environ.setdefault("PYTORCH_LIGHTNING_LOG_LEVEL", "ERROR")
-os.environ.setdefault("PL_ENABLE_PROGRESS_BAR", "0")  # Disable "Predicting DataLoader" progress bars
+os.environ.setdefault("PL_ENABLE_PROGRESS_BAR", "0")
 for logger_name in (
     "lightning.pytorch.utilities.rank_zero",
     "pytorch_lightning.utilities.rank_zero",
@@ -25,46 +21,47 @@ for logger_name in (
 ):
     logging.getLogger(logger_name).setLevel(logging.ERROR)
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 import torch
 
-# The LENS checkpoint was saved on CUDA — force CPU loading.
 _orig_torch_load = torch.load
+
+
 def _cpu_torch_load(f, *args, **kwargs):
     kwargs["map_location"] = torch.device("cpu")
     return _orig_torch_load(f, *args, **kwargs)
+
+
 torch.load = _cpu_torch_load
 
 from lens import LENS, download_model
-from app.db.session import SessionLocal
-from app.models.t5_evaluation import T5LargeTextSimplificationEvaluation
-from app.models.dataset import DatasetItem
-from app.experiments.RAG.bge.build_embedding_index_test_set import get_test_items
 
+from app.db.session import SessionLocal
+from app.experiments.RAG.bge.build_embedding_index_test_set import get_test_items
+from app.models.dataset import DatasetItem
+from app.models.plan_simp_evaluation import PlanSimpTextSimplificationEvaluation
 
 LENS_MODEL_ID = "davidheineman/lens"
 LENS_BATCH_SIZE = 32
 
 
-def calculate_t5_lens_scores():
+def calculate_plan_simp_lens_scores():
     db = SessionLocal()
 
     model_path = download_model(LENS_MODEL_ID)
     lens_metric = LENS(model_path, rescale=True)
 
     try:
-        # Only score test-set items (same 40 as used in analysis)
         test_items = get_test_items(db)
         test_item_ids = {item[0] for item in test_items}
 
         rows = (
-            db.query(T5LargeTextSimplificationEvaluation)
-            .filter(T5LargeTextSimplificationEvaluation.item_id.in_(test_item_ids))
+            db.query(PlanSimpTextSimplificationEvaluation)
+            .filter(PlanSimpTextSimplificationEvaluation.item_id.in_(test_item_ids))
             .all()
         )
 
-        # Build a lookup: item_id -> reference text (text_ele)
         dataset_items = (
             db.query(DatasetItem)
             .filter(DatasetItem.item_id.in_(test_item_ids))
@@ -72,9 +69,9 @@ def calculate_t5_lens_scores():
         )
         reference_map = {str(d.item_id): d.text_ele for d in dataset_items}
 
-        # Filter to rows with valid data
         valid_rows = [
-            row for row in rows
+            row
+            for row in rows
             if reference_map.get(str(row.item_id)) and row.output_text and row.input_text
         ]
 
@@ -100,15 +97,17 @@ def calculate_t5_lens_scores():
                         row.lens = float(scores[i])
             except Exception:
                 import traceback
+
                 traceback.print_exc()
 
         db.commit()
-        print(f"\n✓ LENS scores stored for {len(valid_rows)} T5 rows.")
+        print(f"\n✓ LENS scores stored for {len(valid_rows)} Plan-Simp rows.")
 
     except Exception as e:
         db.rollback()
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         raise
     finally:
@@ -116,4 +115,4 @@ def calculate_t5_lens_scores():
 
 
 if __name__ == "__main__":
-    calculate_t5_lens_scores()
+    calculate_plan_simp_lens_scores()

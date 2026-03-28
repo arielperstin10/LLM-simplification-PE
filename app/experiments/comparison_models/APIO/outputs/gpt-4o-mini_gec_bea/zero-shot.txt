@@ -1,3 +1,0 @@
-Reply with a corrected version of the sentence with all grammatical and spelling errors fixed. If there are no errors, reply with a copy of the original sentence.
-Input sentence: <input_text>
-Corrected sentence:
