@@ -1,12 +1,11 @@
 """
-Aggregate T5 evaluation metrics for the 40 test items and export to CSV.
+Aggregate Plan-Simp metrics for the 40 test items and export to CSV.
 
-Uses the same 40 test items as RAG and prompt engineering (random.seed(42)).
-Output format matches app/experiments/analysis/outputs/csv/prompt_versions/*.csv
-for direct comparison with other models.
+Uses the same test split as RAG / prompt engineering (random.seed(42)).
+Output format matches app/experiments/comparison_models/t5_model/analyze_t5_test_set.py.
 
 Usage:
-    python -m app.experiments.comparison_models.t5_model.analyze_t5_test_set
+    python -m app.experiments.comparison_models.plan_simp.analyze_plan_simp_test_set
 """
 
 import sys
@@ -15,19 +14,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Ensure app is on path when run as module
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from app.db.session import SessionLocal
-from app.models.t5_evaluation import T5LargeTextSimplificationEvaluation
 from app.experiments.RAG.bge.build_embedding_index_test_set import get_test_items
+from app.models.plan_simp_evaluation import PlanSimpTextSimplificationEvaluation
 
 
-def aggregate_t5_test_set_metrics():
-    """
-    Query t5_large_text_simplification_evaluation for the 40 test items,
-    compute mean and std for each metric, return a single-row DataFrame.
-    """
+def aggregate_plan_simp_test_set_metrics():
     db = SessionLocal()
     try:
         test_items = get_test_items(db)
@@ -40,18 +34,17 @@ def aggregate_t5_test_set_metrics():
             )
 
         rows = (
-            db.query(T5LargeTextSimplificationEvaluation)
-            .filter(T5LargeTextSimplificationEvaluation.item_id.in_(test_item_ids))
+            db.query(PlanSimpTextSimplificationEvaluation)
+            .filter(PlanSimpTextSimplificationEvaluation.item_id.in_(test_item_ids))
             .all()
         )
 
         if len(rows) < 40:
             print(
-                f"Warning: Found {len(rows)} T5 results for test set (expected 40). "
+                f"Warning: Found {len(rows)} Plan-Simp results for test set (expected 40). "
                 "Proceeding with available data."
             )
 
-        # Extract metric arrays (handle None)
         def safe_values(field):
             vals = [getattr(r, field) for r in rows if getattr(r, field) is not None]
             return np.array(vals) if vals else np.array([np.nan])
@@ -68,7 +61,6 @@ def aggregate_t5_test_set_metrics():
             "lens": safe_values("lens"),
         }
 
-        # Build row matching prompt_versions CSV format
         def mean_std(arr):
             arr = arr[~np.isnan(arr)]
             if len(arr) == 0:
@@ -76,8 +68,8 @@ def aggregate_t5_test_set_metrics():
             return float(np.mean(arr)), float(np.std(arr)) if len(arr) > 1 else 0.0
 
         row = {
-            "model": "t5-large-text-simplification",
-            "description": "T5 fine-tuned (test set)",
+            "model": "plan-simp-pgdyn",
+            "description": "Plan-Simp PG-Dyn simplifier (test set)",
             "count": len(rows),
             "BERTScore": mean_std(metrics["bertscore_f1"])[0],
             "BERTScore_std": mean_std(metrics["bertscore_f1"])[1],
@@ -109,10 +101,10 @@ def aggregate_t5_test_set_metrics():
 def main():
     output_dir = Path(__file__).parent / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "t5_test_set_analysis.csv"
+    output_path = output_dir / "plan_simp_test_set_analysis.csv"
 
-    print("Aggregating T5 metrics for 40 test items...")
-    df = aggregate_t5_test_set_metrics()
+    print("Aggregating Plan-Simp metrics for 40 test items...")
+    df = aggregate_plan_simp_test_set_metrics()
     df.to_csv(output_path, index=False)
     print(f"Exported to {output_path}")
     print(f"  Rows: {len(df)}, Count: {df['count'].iloc[0]}")
