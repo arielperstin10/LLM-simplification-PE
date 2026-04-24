@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 import torch
+from sqlalchemy import or_
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from app.db.session import SessionLocal
 from app.models.prompt import PromptResult
@@ -68,10 +69,38 @@ def calculate_perplexity_single(text, model, tokenizer, device, max_length=1024)
         return None
 
 
-def calculate_perplexity(description=None):
+def calculate_perplexity(description=None, force_recalculate=False, model_name=None):
     db = SessionLocal()
     
     try:
+        # PromptResults needing perplexity (skip rows that already have it stored)
+        query = db.query(
+            PromptResult.result_id,
+            PromptResult.prompt_version_id,
+            PromptResult.output_text
+        ).outerjoin(
+            Evaluation, Evaluation.result_id == PromptResult.result_id
+        ).filter(
+            PromptResult.output_text.isnot(None),
+            PromptResult.output_text != "",
+        )
+        if not force_recalculate:
+            query = query.filter(
+                or_(
+                    Evaluation.result_id.is_(None),
+                    Evaluation.perplexity.is_(None),
+                )
+            )
+        if description is not None:
+            query = query.filter(PromptResult.description == description)
+        if model_name is not None:
+            query = query.filter(PromptResult.model_name == model_name)
+        results = query.all()
+        
+        if not results:
+            print("No PromptResults need perplexity (none matched filters, or all already have perplexity).")
+            return
+
         print("Loading distilgpt2 model...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = AutoModelForCausalLM.from_pretrained("distilgpt2").to(device)
@@ -83,23 +112,6 @@ def calculate_perplexity(description=None):
         
         model.eval()
         print(f"Model loaded on {device}")
-        
-        # Get all PromptResults with non-null output_text
-        query = db.query(
-            PromptResult.result_id,
-            PromptResult.prompt_version_id,
-            PromptResult.output_text
-        ).filter(
-            PromptResult.output_text.isnot(None),
-            PromptResult.output_text != ""
-        )
-        if description is not None:
-            query = query.filter(PromptResult.description == description)
-        results = query.all()
-        
-        if not results:
-            print("No PromptResults found with output_text")
-            return
         
         print(f"Found {len(results)} PromptResult rows to process")
         print("Computing perplexities (this may take a few minutes)...\n")
@@ -170,5 +182,15 @@ def calculate_perplexity(description=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate Perplexity for PromptResults")
     parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    parser.add_argument(
+        "--force-recalculate",
+        action="store_true",
+        help="Recompute perplexity even when already stored on Evaluation",
+    )
+    parser.add_argument("--model-name", type=str, default=None, help="Filter by PromptResult.model_name")
     args = parser.parse_args()
-    calculate_perplexity(description=args.description)
+    calculate_perplexity(
+        description=args.description,
+        force_recalculate=args.force_recalculate,
+        model_name=args.model_name,
+    )

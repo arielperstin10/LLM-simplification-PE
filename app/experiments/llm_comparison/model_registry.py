@@ -1,7 +1,7 @@
 """
 Model registry and unified LLM caller for RAG pipeline.
 
-Maps model names (openai, gemini, llama, sonar, sonar-pro) to their
+Maps model names (openai, gemini, llama, sonar, sonar-pro, claude-haiku-4-5) to their
 configuration and provides a single async call_llm() that dispatches
 to the appropriate client.
 """
@@ -47,6 +47,12 @@ MODEL_CONFIG: Dict[str, Dict[str, Any]] = {
         "env_key": "PERPLEXITYAI_API_KEY",
         "client_type": "agents",
     },
+    "claude-haiku-4-5": {
+        "model_id": "litellm/anthropic/claude-haiku-4-5-20251001",
+        "display_name": "claude-haiku-4-5",
+        "env_key": "CLAUDE_API_KEY",
+        "client_type": "agents",
+    },
 }
 
 
@@ -69,6 +75,8 @@ def _ensure_env(model_name: str) -> None:
         if not api_key:
             raise ValueError(f"{env_key} is not set. Add it to .env or environment.")
         os.environ[env_key] = api_key
+        if env_key == "CLAUDE_API_KEY":
+            os.environ.setdefault("ANTHROPIC_API_KEY", api_key)
 
 
 async def call_llm(model_name: str, full_prompt: str) -> str:

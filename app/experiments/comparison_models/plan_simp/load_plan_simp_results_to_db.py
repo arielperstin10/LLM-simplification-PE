@@ -8,6 +8,8 @@ Usage:
     python -m app.experiments.comparison_models.plan_simp.load_plan_simp_results_to_db \\
         --jsonl app/experiments/comparison_models/plan_simp/outputs/plan_simp_raw_results.jsonl
     python -m app.experiments.comparison_models.plan_simp.load_plan_simp_results_to_db --allow-duplicate
+    python -m app.experiments.comparison_models.plan_simp.load_plan_simp_results_to_db \\
+        --jsonl app/experiments/comparison_models/plan_simp/outputs_complement/plan_simp_raw_results.jsonl
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 import torch
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]

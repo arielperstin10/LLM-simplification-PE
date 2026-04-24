@@ -1,13 +1,18 @@
 """
-Export the 40 BGE test items to plan_simp CSVs, run encode_contexts + generate.py dynamic
+Export dataset items to plan_simp CSVs, run encode_contexts + generate.py dynamic
 (planner + simplifier), then write plan_simp_raw_results.jsonl.
 
-Phase 1 (brief DB access): fetch test items + references, build CSVs + manifest, disconnect.
+Default split is the 40-item BGE test set (same random seed/sample as RAG test-set builders).
+Use --split complement for all other items with text_adv (e.g. 149 when the corpus has 189).
+
+Phase 1 (brief DB access): fetch items + references, build CSVs + manifest, disconnect.
 Phase 2 (GPU / no DB): encode contexts, run dynamic generation, merge to JSONL.
 
 Usage:
     python -m app.experiments.comparison_models.plan_simp.run_plan_simp_pipeline
     python -m app.experiments.comparison_models.plan_simp.run_plan_simp_pipeline --export-only
+    python -m app.experiments.comparison_models.plan_simp.run_plan_simp_pipeline \\
+        --split complement --output-dir app/experiments/comparison_models/plan_simp/outputs_complement
     python -m app.experiments.comparison_models.plan_simp.run_plan_simp_pipeline \\
         --clf-model liamcripwell/pgdyn-plan --simp-model liamcripwell/pgdyn-simp --device cuda
 """
@@ -23,7 +28,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 from uuid import UUID
 
 import pandas as pd
@@ -42,20 +47,32 @@ TEST_SAMPLE_SIZE = 40
 RANDOM_SEED = 42
 
 
-def get_test_items_bge_split(db):
-    all_items = (
+def _all_items_with_text_adv(db):
+    return (
         db.query(DatasetItem.item_id, DatasetItem.text_adv)
         .filter(DatasetItem.text_adv.isnot(None))
         .all()
     )
+
+
+def _bge_test_item_ids(all_items: List[Tuple[UUID, str]]) -> set[UUID]:
     random.seed(RANDOM_SEED)
-    test_item_ids = set(
-        item[0]
-        for item in random.sample(
-            all_items, min(TEST_SAMPLE_SIZE, len(all_items))
-        )
-    )
-    return [item for item in all_items if item[0] in test_item_ids]
+    k = min(TEST_SAMPLE_SIZE, len(all_items))
+    return {item[0] for item in random.sample(all_items, k)}
+
+
+def get_test_items_bge_split(db):
+    """The 40-item (or fewer) BGE test split; same IDs as RAG test-set scripts."""
+    all_items = _all_items_with_text_adv(db)
+    test_ids = _bge_test_item_ids(all_items)
+    return [item for item in all_items if item[0] in test_ids]
+
+
+def get_complement_items_bge_split(db):
+    """All items with text_adv that are not in the BGE test split."""
+    all_items = _all_items_with_text_adv(db)
+    test_ids = _bge_test_item_ids(all_items)
+    return [item for item in all_items if item[0] not in test_ids]
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -90,24 +107,40 @@ def _sentences(text: str) -> List[str]:
 
 def export_test_items_to_csv(
     output_dir: Path,
+    split: Literal["test", "complement"] = "test",
 ) -> Tuple[Path, Path, Path]:
     """
-    Load 40 BGE test items from DB, write plan_simp_docs.csv, plan_simp_sents.csv, manifest.json.
-    Returns paths (docs_csv, sents_csv, manifest_json).
+    Load items from DB for the chosen split, write plan_simp_docs.csv, plan_simp_sents.csv,
+    manifest.json. Returns paths (docs_csv, sents_csv, manifest_json).
     """
     _ensure_nltk_punkt()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     db = SessionLocal()
     try:
-        test_rows = get_test_items_bge_split(db)
-        if len(test_rows) != 40:
-            logger.warning(
-                "Expected 40 test items from get_test_items_bge_split(), got %s",
-                len(test_rows),
-            )
+        all_items = _all_items_with_text_adv(db)
+        test_ids = _bge_test_item_ids(all_items)
+        if split == "test":
+            rows = [item for item in all_items if item[0] in test_ids]
+            if len(rows) != TEST_SAMPLE_SIZE and len(all_items) >= TEST_SAMPLE_SIZE:
+                logger.warning(
+                    "Expected %s test items, got %s",
+                    TEST_SAMPLE_SIZE,
+                    len(rows),
+                )
+        elif split == "complement":
+            rows = [item for item in all_items if item[0] not in test_ids]
+            expected = len(all_items) - min(TEST_SAMPLE_SIZE, len(all_items))
+            if len(rows) != expected:
+                logger.warning(
+                    "Complement size unexpected: got %s, expected %s (non-test items)",
+                    len(rows),
+                    expected,
+                )
+        else:
+            raise ValueError(f"Unknown split: {split!r}")
 
-        item_ids = [r[0] for r in test_rows]
+        item_ids = [r[0] for r in rows]
         extras = (
             db.query(DatasetItem.item_id, DatasetItem.text_ele)
             .filter(DatasetItem.item_id.in_(item_ids))
@@ -119,7 +152,7 @@ def export_test_items_to_csv(
         docs_rows: List[Dict[str, Any]] = []
         sents_rows: List[Dict[str, Any]] = []
 
-        for idx, (item_id, text_adv) in enumerate(test_rows):
+        for idx, (item_id, text_adv) in enumerate(rows):
             pair_id = f"p{idx:04d}"
             text_ele = ele_map.get(item_id)
             sents = _sentences(text_adv)
@@ -176,7 +209,12 @@ def export_test_items_to_csv(
         pd.DataFrame(docs_rows).to_csv(docs_csv, index=False)
         pd.DataFrame(sents_rows).to_csv(sents_csv, index=False)
         with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump({"version": 1, "items": manifest_items}, f, indent=2, ensure_ascii=False)
+            json.dump(
+                {"version": 1, "split": split, "items": manifest_items},
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
 
         logger.info(
             "Wrote %s docs, %s sentence rows, manifest with %s items",
@@ -310,12 +348,18 @@ def main() -> None:
         action="store_true",
         help="Reuse existing plan_simp_context_embeds in output-dir",
     )
+    parser.add_argument(
+        "--split",
+        choices=("test", "complement"),
+        default="test",
+        help="test: 40-item BGE sample; complement: all other items with text_adv",
+    )
     args = parser.parse_args()
 
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    docs_csv, sents_csv, manifest_path = export_test_items_to_csv(out)
+    docs_csv, sents_csv, manifest_path = export_test_items_to_csv(out, split=args.split)
     if args.export_only:
         logger.info("Export complete (--export-only).")
         return

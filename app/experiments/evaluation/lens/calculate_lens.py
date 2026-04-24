@@ -25,6 +25,7 @@ for logger_name in (
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 import torch
+from sqlalchemy import or_
 
 # The LENS checkpoint was saved on CUDA. Patch torch.load to force CPU
 # loading since lens-metric doesn't expose a map_location parameter.
@@ -45,7 +46,7 @@ LENS_MODEL_ID = "davidheineman/lens"
 LENS_BATCH_SIZE = 32  # Process in batches to reduce PyTorch Lightning prediction cycles
 
 
-def _fetch_results(description=None, max_retries=3):
+def _fetch_results(description=None, force_recalculate=False, model_name=None, max_retries=3):
     """Fetch results with retry for transient Supabase connection timeouts."""
     for attempt in range(max_retries):
         try:
@@ -59,12 +60,23 @@ def _fetch_results(description=None, max_retries=3):
                     DatasetItem.text_ele
                 ).join(
                     DatasetItem, PromptResult.item_id == DatasetItem.item_id
+                ).outerjoin(
+                    Evaluation, Evaluation.result_id == PromptResult.result_id
                 ).filter(
                     PromptResult.output_text.isnot(None),
-                    DatasetItem.text_ele.isnot(None)
+                    DatasetItem.text_ele.isnot(None),
                 )
+                if not force_recalculate:
+                    query = query.filter(
+                        or_(
+                            Evaluation.result_id.is_(None),
+                            Evaluation.lens.is_(None),
+                        )
+                    )
                 if description is not None:
                     query = query.filter(PromptResult.description == description)
+                if model_name is not None:
+                    query = query.filter(PromptResult.model_name == model_name)
                 return query.all()
             finally:
                 db.close()
@@ -77,9 +89,15 @@ def _fetch_results(description=None, max_retries=3):
                 raise
 
 
-def calculate_lens_scores(description=None):
+def calculate_lens_scores(description=None, force_recalculate=False, model_name=None):
     # Fetch all results first (with retry for transient Supabase timeouts)
-    results = _fetch_results(description)
+    results = _fetch_results(
+        description, force_recalculate=force_recalculate, model_name=model_name
+    )
+
+    if not results:
+        print("\n✓ LENS: no rows to process (all matching results already have lens, or no PromptResults matched).")
+        return
 
     # Download/load the LENS model checkpoint from HuggingFace (cached after first run)
     # rescale=True gives scores in 0-100 range for better interpretability
@@ -153,5 +171,15 @@ def calculate_lens_scores(description=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate LENS scores for PromptResults")
     parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    parser.add_argument(
+        "--force-recalculate",
+        action="store_true",
+        help="Recompute LENS even when already stored on Evaluation",
+    )
+    parser.add_argument("--model-name", type=str, default=None, help="Filter by PromptResult.model_name")
     args = parser.parse_args()
-    calculate_lens_scores(description=args.description)
+    calculate_lens_scores(
+        description=args.description,
+        force_recalculate=args.force_recalculate,
+        model_name=args.model_name,
+    )
