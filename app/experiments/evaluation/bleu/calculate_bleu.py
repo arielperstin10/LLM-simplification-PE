@@ -10,6 +10,7 @@ from pathlib import Path
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
+from sqlalchemy import or_
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from app.db.session import SessionLocal
 from app.models.prompt import PromptResult
@@ -17,7 +18,7 @@ from app.models.dataset import DatasetItem
 from app.models.evaluation import Evaluation
 
 
-def calculate_bleu(description=None):
+def calculate_bleu(description=None, force_recalculate=False, model_name=None):
     db = SessionLocal()
     
     try:
@@ -28,12 +29,23 @@ def calculate_bleu(description=None):
             DatasetItem.text_ele
         ).join(
             DatasetItem, PromptResult.item_id == DatasetItem.item_id
+        ).outerjoin(
+            Evaluation, Evaluation.result_id == PromptResult.result_id
         ).filter(
             PromptResult.output_text.isnot(None),
-            DatasetItem.text_ele.isnot(None)
+            DatasetItem.text_ele.isnot(None),
         )
+        if not force_recalculate:
+            query = query.filter(
+                or_(
+                    Evaluation.result_id.is_(None),
+                    Evaluation.bleu.is_(None),
+                )
+            )
         if description is not None:
             query = query.filter(PromptResult.description == description)
+        if model_name is not None:
+            query = query.filter(PromptResult.model_name == model_name)
         results = query.all()
         
         # Calculate BLEU for each individual PromptResult
@@ -98,6 +110,16 @@ def calculate_bleu(description=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate BLEU scores for PromptResults")
     parser.add_argument("--description", type=str, default=None, help="Only process results with this description")
+    parser.add_argument(
+        "--force-recalculate",
+        action="store_true",
+        help="Recompute BLEU even when already stored on Evaluation",
+    )
+    parser.add_argument("--model-name", type=str, default=None, help="Filter by PromptResult.model_name")
     args = parser.parse_args()
-    calculate_bleu(description=args.description)
+    calculate_bleu(
+        description=args.description,
+        force_recalculate=args.force_recalculate,
+        model_name=args.model_name,
+    )
 

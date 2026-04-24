@@ -13,7 +13,7 @@ step 1 and step 2 are kept separate.
 import argparse
 import sys
 from pathlib import Path
-from sqlalchemy import func
+from sqlalchemy import case, func
 import pandas as pd
 import numpy as np
 
@@ -146,6 +146,12 @@ def aggregate_by_model_and_strategy(description=None):
     """
     Aggregate metrics by model and prompt strategy.
     Returns DataFrame with metrics grouped by model + strategy_type.
+
+    Rows are anchored on ``prompt_results`` (left join to ``evaluation``) so
+    ``count`` matches the number of model outputs for that bucket (e.g. 189).
+    Means/stddevs use SQL aggregates that ignore NULLs per metric; if some
+    items lack an evaluation or a given metric, use ``count_with_bertscore``
+    to see how many rows had BERTScore for overlap with those aggregates.
     """
     db = SessionLocal()
     
@@ -164,6 +170,8 @@ def aggregate_by_model_and_strategy(description=None):
             func.stddev(Evaluation.sari).label('std_sari'),
             func.avg(Evaluation.perplexity).label('avg_perplexity'),
             func.stddev(Evaluation.perplexity).label('std_perplexity'),
+            func.avg(Evaluation.lens).label('avg_lens'),
+            func.stddev(Evaluation.lens).label('std_lens'),
             # Readability deltas
             func.avg(Evaluation.delta_fkgl).label('avg_delta_fkgl'),
             func.stddev(Evaluation.delta_fkgl).label('std_delta_fkgl'),
@@ -172,17 +180,22 @@ def aggregate_by_model_and_strategy(description=None):
             # Output readability
             func.avg(Evaluation.fkgl_output).label('avg_fkgl_output'),
             func.avg(Evaluation.fre_output).label('avg_fre_output'),
-            # Count
-            func.count(Evaluation.evaluation_id).label('count')
+            # Counts: total outputs vs rows with BERTScore (legacy queries filtered the latter only)
+            func.count(PromptResult.result_id).label('count'),
+            func.sum(
+                case((Evaluation.bertscore_f1.isnot(None), 1), else_=0)
+            ).label('count_with_bertscore'),
+        ).select_from(PromptResult).join(
+            PromptVersion,
+            PromptResult.prompt_version_id == PromptVersion.prompt_version_id,
         ).join(
-            PromptResult, Evaluation.result_id == PromptResult.result_id
-        ).join(
-            PromptVersion, Evaluation.prompt_version_id == PromptVersion.prompt_version_id
-        ).join(
-            Prompt, PromptVersion.prompt_id == Prompt.prompt_id
+            Prompt,
+            PromptVersion.prompt_id == Prompt.prompt_id,
+        ).outerjoin(
+            Evaluation,
+            PromptResult.result_id == Evaluation.result_id,
         ).filter(
             PromptResult.model_name.isnot(None),
-            Evaluation.bertscore_f1.isnot(None)
         )
         if description is not None:
             query = query.filter(PromptResult.description == description)
@@ -204,7 +217,10 @@ def aggregate_by_model_and_strategy(description=None):
             'version': r.version,
             'description': r.description,
             'strategy': r.strategy_type,
-            'count': r.count,
+            'count': int(r.count) if r.count is not None else 0,
+            'count_with_bertscore': int(r.count_with_bertscore)
+            if r.count_with_bertscore is not None
+            else 0,
             # BERTScore
             'bertscore_mean': float(r.avg_bertscore) if r.avg_bertscore else None,
             'bertscore_std': float(r.std_bertscore) if r.std_bertscore else None,
@@ -217,6 +233,9 @@ def aggregate_by_model_and_strategy(description=None):
             # Perplexity
             'perplexity_mean': float(r.avg_perplexity) if r.avg_perplexity else None,
             'perplexity_std': float(r.std_perplexity) if r.std_perplexity else None,
+            # LENS
+            'lens_mean': float(r.avg_lens) if r.avg_lens else None,
+            'lens_std': float(r.std_lens) if r.std_lens else None,
             # FKGL Delta
             'fkgl_delta_mean': float(r.avg_delta_fkgl) if r.avg_delta_fkgl else None,
             'fkgl_delta_std': float(r.std_delta_fkgl) if r.std_delta_fkgl else None,

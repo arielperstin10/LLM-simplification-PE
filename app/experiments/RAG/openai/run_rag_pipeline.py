@@ -5,9 +5,14 @@ Retrieves top-k similar examples from train embeddings, prepends them to
 the active prompt templates (unchanged), and runs the LLM for each test item.
 Stores results in prompt_results with user-provided description.
 
-Usage:
-    python -m app.experiments.RAG.run_rag_pipeline --model gemini --description "RAG-top3-gemini"
-    python -m app.experiments.RAG.run_rag_pipeline --model openai --description "RAG-top3-openai" --strategy zeroshot
+Usage (from repo root; test set is 40 items from get_test_items — embeddings must exist):
+
+    python -m app.experiments.RAG.openai.run_rag_pipeline --model claude-haiku-4-5 --description "step 2 - RAG top k=3" --top-k 3
+    python -m app.experiments.RAG.openai.run_rag_pipeline --model openai --description "step 2 - RAG top k=3" --strategy zeroshot
+
+Then evaluate:
+
+    python -m app.experiments.evaluation.evaluate_run --description "step 2 - RAG top k=3" --model-name claude-haiku-4-5
 """
 
 import argparse

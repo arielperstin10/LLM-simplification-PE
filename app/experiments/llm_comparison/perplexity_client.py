@@ -1,3 +1,4 @@
+import argparse
 import random
 import asyncio
 import os
@@ -13,7 +14,13 @@ from app.db.session import SessionLocal
 from app.models.prompt import Prompt, PromptVersion, PromptResult
 from app.models.dataset import DatasetItem
 
-# Set random seed for reproducibility
+# Stored on PromptResult rows; use the same string when running evaluations, e.g.:
+#   python -m app.experiments.evaluation.evaluate_run --description "step 1 - simple prompt engineering"
+RESULT_DESCRIPTION = "step 1 - simple prompt engineering"
+
+PILOT_N = 40
+
+# Set random seed for reproducibility (must match historical pilot run)
 random.seed(42)
 
 # Set Perplexity API key for agents library
@@ -26,20 +33,20 @@ else:
 db = SessionLocal()
 
 try:
-    #Prompt Instructions - Get both template_text and prompt_version_id
+    # Prompt Instructions - Get both template_text and prompt_version_id (active versions only)
     zero_shot_prompt = db.query(PromptVersion).join(Prompt, PromptVersion.prompt_id == Prompt.prompt_id).filter(
-        Prompt.strategy_type == "zeroshot", 
-        PromptVersion.is_active == True
+        Prompt.strategy_type == "zeroshot",
+        PromptVersion.is_active == True,
     ).first()
 
     structured_prompt = db.query(PromptVersion).join(Prompt, PromptVersion.prompt_id == Prompt.prompt_id).filter(
-        Prompt.strategy_type == "structured", 
-        PromptVersion.is_active == True
+        Prompt.strategy_type == "structured",
+        PromptVersion.is_active == True,
     ).first()
 
     constraint_prompt = db.query(PromptVersion).join(Prompt, PromptVersion.prompt_id == Prompt.prompt_id).filter(
-        Prompt.strategy_type == "constraint", 
-        PromptVersion.is_active == True
+        Prompt.strategy_type == "constraint",
+        PromptVersion.is_active == True,
     ).first()
 
     # Validate that all prompts exist
@@ -54,9 +61,14 @@ try:
     InstructionStructuredPrompt = structured_prompt.template_text
     InstructionConstraintPrompt = constraint_prompt.template_text
 
-    # Get all items, then randomly select 40 with seed 42
+    zero_shot_pv_id = zero_shot_prompt.prompt_version_id
+    structured_pv_id = structured_prompt.prompt_version_id
+    constraint_pv_id = constraint_prompt.prompt_version_id
+
     all_items = db.query(DatasetItem.item_id, DatasetItem.text_adv).filter(DatasetItem.text_adv.isnot(None)).all()
-    DatasetItems = random.sample(all_items, min(40, len(all_items)))
+    pilot_items = random.sample(all_items, min(PILOT_N, len(all_items)))
+    pilot_set = set(pilot_items)
+    remaining_items = [row for row in all_items if row not in pilot_set]
 finally:
     db.close()
 
@@ -82,14 +94,14 @@ ConstraintAgent = Agent(
 )
 
 # Iterate and call LLM 3 times for each item (zero-shot, structured, constraint)
-async def run_comparison():
+async def run_comparison(dataset_items):
     db_session = SessionLocal()
-    
+
     try:
-        print(f"Starting comparison with {len(DatasetItems)} items...")
-        
-        for idx, (item_id, text_adv) in enumerate(DatasetItems, 1):
-            print(f"\nProcessing item {idx}/{len(DatasetItems)} (ID: {item_id})...")
+        print(f"Starting comparison with {len(dataset_items)} items (description={RESULT_DESCRIPTION!r})...")
+
+        for idx, (item_id, text_adv) in enumerate(dataset_items, 1):
+            print(f"\nProcessing item {idx}/{len(dataset_items)} (ID: {item_id})...")
             
             # Add delay between requests to avoid rate limits
             # Perplexity may need slightly longer delays due to web search capabilities
@@ -147,18 +159,19 @@ async def run_comparison():
             output_constraint_text = result_constraint.final_output if hasattr(result_constraint, 'final_output') else str(result_constraint)
             
             results = {
-                "zero-shot": (output_zeroshot_text, zero_shot_prompt.prompt_version_id),
-                "structured": (output_structured_text, structured_prompt.prompt_version_id),
-                "constraint": (output_constraint_text, constraint_prompt.prompt_version_id)
+                "zero-shot": (output_zeroshot_text, zero_shot_pv_id),
+                "structured": (output_structured_text, structured_pv_id),
+                "constraint": (output_constraint_text, constraint_pv_id),
             }
-            
+
             for key, (output_text, prompt_version_id) in results.items():
                 prompt_result = PromptResult(
                     item_id=item_id,
                     prompt_version_id=prompt_version_id,
                     input_text=text_adv,
                     output_text=output_text,
-                    model_name="sonar"
+                    model_name="sonar",
+                    description=RESULT_DESCRIPTION,
                 )
                 
                 db_session.add(prompt_result)
@@ -172,5 +185,38 @@ async def run_comparison():
     finally:
         db_session.close()
 
+def _select_items(subset: str):
+    if subset == "pilot":
+        return pilot_items
+    if subset == "remaining":
+        return remaining_items
+    if subset == "all":
+        return all_items
+    raise ValueError(f"Unknown subset: {subset}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Perplexity Sonar on dataset items and store PromptResults."
+    )
+    parser.add_argument(
+        "--subset",
+        choices=("pilot", "remaining", "all"),
+        default="remaining",
+        help=(
+            "pilot: same 40 items as the original seed-42 run; "
+            "remaining: all other items with text_adv (the ~149 left after pilot); "
+            "all: full dataset."
+        ),
+    )
+    args = parser.parse_args()
+    items = _select_items(args.subset)
+    print(
+        f"Subset={args.subset!r}: {len(items)} items "
+        f"(total with text_adv={len(all_items)}, pilot={len(pilot_items)}, remaining={len(remaining_items)})"
+    )
+    asyncio.run(run_comparison(items))
+
+
 if __name__ == "__main__":
-    asyncio.run(run_comparison())
+    main()
