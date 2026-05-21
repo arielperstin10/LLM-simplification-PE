@@ -14,6 +14,8 @@ _ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from app.experiments.results.phase_utils import canonicalize_phase_column
+
 PE_PHASES = {"PE_v1", "PE_v2"}
 RAG_PHASES = {
     "Open AI RAG v2",
@@ -27,7 +29,7 @@ def _load_agg(aggregated_dir: Path) -> pd.DataFrame:
     path = aggregated_dir / "results_all_experiments.csv"
     if not path.exists():
         raise FileNotFoundError(f"Missing {path}. Run collect_results.py first.")
-    return pd.read_csv(path)
+    return canonicalize_phase_column(pd.read_csv(path))
 
 
 def table_01_pe_by_model_strategy(df: pd.DataFrame) -> pd.DataFrame:

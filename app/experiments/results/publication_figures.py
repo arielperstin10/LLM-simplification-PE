@@ -54,7 +54,7 @@ MODEL_ORDER = [
 ]
 
 RAG_PHASES_V3 = {"Open AI RAG v3", "E5 RAG v3", "BGE RAG v3"}
-PE_PHASES = {"Simple Prompt v1", "Simple Prompt v2"}
+PE_PHASES = {"PE_v1", "PE_v2"}
 ALL_RAG_PHASES = {
     "Open AI RAG v2",
     "Open AI RAG v3",
