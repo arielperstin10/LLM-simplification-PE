@@ -19,7 +19,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from app.experiments.analysis.aggregate_metrics import aggregate_by_model_and_strategy
-from app.experiments.results.phase_utils import add_phase_columns, filter_models
+from app.experiments.results.phase_utils import add_phase_columns, canonicalize_phase_column, filter_models
 from app.experiments.results.publication_figures import generate_all
 from app.experiments.visualization.data_loader import load_detailed_results
 
@@ -34,7 +34,9 @@ def load_inputs(aggregated_dir: Path):
     if agg_p.exists() and det_p.exists():
         import pandas as pd
 
-        return pd.read_csv(agg_p), pd.read_csv(det_p)
+        agg = canonicalize_phase_column(pd.read_csv(agg_p))
+        det = canonicalize_phase_column(pd.read_csv(det_p))
+        return agg, det
     agg = aggregate_by_model_and_strategy(None)
     agg = add_phase_columns(filter_models(agg))
     det = load_detailed_results(None)
