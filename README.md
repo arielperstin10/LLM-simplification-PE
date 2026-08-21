@@ -36,22 +36,6 @@ To run with Docker:
 docker-compose up
 ```
 
-## Project URLs
-
-### Test Environment
-
-- **URL:** [https://llm-simplification-api-test.onrender.com](https://llm-simplification-api-test.onrender.com)
-- **Branch:** `testServer`
-- **Health Check:** [https://llm-simplification-api-test.onrender.com/api/v1/health](https://llm-simplification-api-test.onrender.com/api/v1/health)
-- **DB Connection Check:** [https://llm-simplification-api-test.onrender.com/api/v1/health/db](https://llm-simplification-api-test.onrender.com/api/v1/health/db)
-
-### Production Environment
-
-- **URL:** [https://llm-simplification-api.onrender.com](https://llm-simplification-api.onrender.com)
-- **Branch:** `main`
-- **Health Check:** [https://llm-simplification-api.onrender.com/api/v1/health](https://llm-simplification-api.onrender.com/api/v1/health)
-- **DB Connection Check:** [https://llm-simplification-api.onrender.com/api/v1/health/db](https://llm-simplification-api.onrender.com/api/v1/health/db)
-
 ## Citation
 
 If you use this code or dataset in your research, please cite our paper:
