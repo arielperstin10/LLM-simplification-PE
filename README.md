@@ -51,3 +51,24 @@ docker-compose up
 - **Branch:** `main`
 - **Health Check:** [https://llm-simplification-api.onrender.com/api/v1/health](https://llm-simplification-api.onrender.com/api/v1/health)
 - **DB Connection Check:** [https://llm-simplification-api.onrender.com/api/v1/health/db](https://llm-simplification-api.onrender.com/api/v1/health/db)
+
+## Citation
+
+If you use this code or dataset in your research, please cite our paper:
+
+**Paper title:** "Example-Guided Prompting for Document-Level Text Simplification"
+
+**Authors:** Marina Litvak, Ariel Perstin, Ilan Shtilman, Michael Färber
+
+**Conference:** INLG 2026
+
+**Paper link:** [https://arxiv.org/abs/2608.05447](https://arxiv.org/abs/2608.05447)
+
+```bibtex
+@inproceedings{litvak2026example,
+  title     = {Example-Guided Prompting for Document-Level Text Simplification},
+  author    = {Litvak, Marina and Perstin, Ariel and Shtilman, Ilan and Färber, Michael},
+  booktitle = {Proceedings of the 2026 International Natural Language Generation Conference (INLG)},
+  year      = {2026}
+}
+```

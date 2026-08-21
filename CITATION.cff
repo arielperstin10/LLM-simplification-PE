@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this code or dataset in your research, please cite our paper."
+title: "Example-Guided Prompting for Document-Level Text Simplification"
+authors:
+  - family-names: Litvak
+    given-names: Marina
+  - family-names: Perstin
+    given-names: Ariel
+  - family-names: Shtilman
+    given-names: Ilan
+  - family-names: Färber
+    given-names: Michael
+date-released: 2026-01-01
+url: "https://arxiv.org/abs/2608.05447"
+preferred-citation:
+  type: conference-paper
+  title: "Example-Guided Prompting for Document-Level Text Simplification"
+  authors:
+    - family-names: Litvak
+      given-names: Marina
+    - family-names: Perstin
+      given-names: Ariel
+    - family-names: Shtilman
+      given-names: Ilan
+    - family-names: Färber
+      given-names: Michael
+  year: 2026
+  conference:
+    name: "Proceedings of the 2026 International Natural Language Generation Conference (INLG)"
+  url: "https://arxiv.org/abs/2608.05447"
