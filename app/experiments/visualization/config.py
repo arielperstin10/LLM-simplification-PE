@@ -18,7 +18,9 @@ MODEL_COLORS = {
     "llama3.2":            "#55A868",   # muted green
     "sonar":               "#C44E52",   # rose red
     "sonar-pro":           "#8172B2",   # violet
+    "claude-haiku-4-5":    "#B07AA1",   # muted purple
     "t5-large-text-simplification": "#937860",  # tan / brown (baseline)
+    "plan-simp-pgdyn": "#2E86AB",  # teal (Plan-Simp baseline)
 }
 
 # Short display labels (for legends, axes)
@@ -28,26 +30,53 @@ MODEL_LABELS = {
     "llama3.2":            "Llama 3.2",
     "sonar":               "Sonar",
     "sonar-pro":           "Sonar Pro",
-    "t5-large-text-simplification": "T5-Large (Baseline)",
+    "claude-haiku-4-5":    "Claude Haiku 4.5",
+    "t5-large-text-simplification": "T5-Large",
+    "plan-simp-pgdyn": "Plan-Simp",
 }
 
 # ---------------------------------------------------------------------------
 # Phase definitions (ordered for evolution charts)
 # ---------------------------------------------------------------------------
-PHASE_ORDER = ["PE_v1", "PE_v2", "RAG_v2", "RAG_v3"]
+PHASE_ORDER = ["PE_v1", "PE_v2", "Open AI RAG v2", "Open AI RAG v3", "E5 RAG v3", "BGE RAG v3"]
 
 PHASE_LABELS = {
     "PE_v1":  "SE v1\n(Initial)",
     "PE_v2":  "SE v2\n(Improved)",
-    "RAG_v2": "RAG v2\n(Top-K=3)",
-    "RAG_v3": "RAG v3\n(Clean Output)",
+    "Open AI RAG v2": "Open AI RAG v2\n(Top-K=3)",
+    "Open AI RAG v3": "Open AI RAG v3\n(Clean Output)",
+    "E5 RAG v3": "E5 RAG v3\n(Clean Output)",
+    "BGE RAG v3": "BGE RAG v3\n(Clean Output)",
 }
 
-# DB description → phase key
+# Compact labels for crowded x-axes (same order as PHASE_ORDER)
+PHASE_AXIS_SHORT = [
+    "Simple Prompt\nv1",
+    "Simple Prompt\nv2",
+    "OpenAI RAG\nbest of v1/v2",
+    "OpenAI RAG\nv3",
+    "E5\nv3",
+    "BGE\nv3",
+]
+
+# Display names for use in figure labels (raw phase key → human-readable name)
+PHASE_DISPLAY_NAMES = {
+    "PE_v1":          "Simple Prompt v1",
+    "PE_v2":          "Simple Prompt v2",
+    "Open AI RAG v2": "OpenAI RAG best of v1/v2",
+    "Open AI RAG v3": "OpenAI RAG v3",
+    "E5 RAG v3":      "E5 v3",
+    "BGE RAG v3":     "BGE v3",
+}
+
+# DB description → phase key (must match PHASE_ORDER exactly)
 DESCRIPTION_TO_PHASE = {
     "step 1 - simple prompt engineering": None,       # split by version field
-    "step 2 - RAG top k=3":               "RAG_v2",
-    "step 2 - RAG top k=3 with upgrated prompt": "RAG_v3",
+    "step 2 - RAG top k=3":               "Open AI RAG v2",
+    "step 2 - RAG top k=3 with upgrated prompt": "Open AI RAG v3",
+    "step 2 - RAG top k=3 with upgraded prompt": "Open AI RAG v3",
+    "E5-RAG-full":                        "E5 RAG v3",
+    "BGE-RAG-full":                       "BGE RAG v3",
 }
 
 # ---------------------------------------------------------------------------
@@ -90,7 +119,7 @@ METRIC_META = {
         "description": "BLEU Score",
     },
     "bertscore": {
-        "label": "BERTScore (F1)",
+        "label": "BERTScore",
         "higher_is_better": True,
         "unit": "",
         "description": "BERTScore F1",

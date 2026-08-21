@@ -36,7 +36,7 @@ elif settings.DATABASE_URL.startswith("postgresql"):
         pool_size=10,
         max_overflow=20,
         pool_recycle=3600,
-        connect_args={"connect_timeout": 10}
+        connect_args={"connect_timeout": 30}
     )
 else:
     engine = create_engine(
